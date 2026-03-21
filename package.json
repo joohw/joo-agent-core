@@ -1,0 +1,48 @@
+{
+  "name": "joo-agent-core",
+  "version": "1.0.0",
+  "description": "pi-agent-core with XState for phase-based dynamic tools",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./agent": {
+      "types": "./dist/agent/index.d.ts",
+      "import": "./dist/agent/index.js"
+    },
+    "./machine": {
+      "types": "./dist/machine/index.d.ts",
+      "import": "./dist/machine/index.js"
+    },
+    "./event": {
+      "types": "./dist/event/index.d.ts",
+      "import": "./dist/event/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "example": "tsx test/example.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@mariozechner/pi-agent-core": "^0.61.1",
+    "@mariozechner/pi-ai": "^0.61.1",
+    "@sinclair/typebox": "^0.34.48",
+    "dotenv": "^17.3.1",
+    "xstate": "^5.28.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}

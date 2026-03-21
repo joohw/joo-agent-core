@@ -1,0 +1,26 @@
+# Dependencies & build
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Logs & caches
+*.log
+.cache/
+coverage/
+.nyc_output/
+
+# Environment (keep example committed)
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Editors / IDEs
+.idea/
+*.swp
+*.swo
+*~
