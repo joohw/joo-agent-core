@@ -23,9 +23,13 @@
       "import": "./dist/event/index.js"
     }
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "example": "tsx test/example.ts"
+    "example": "tsx test/example.ts",
+    "prepublishOnly": "npm run build"
   },
   "keywords": [],
   "author": "",
