@@ -97,7 +97,7 @@ function stateValueKey(value: unknown): string {
   return typeof value === "string" ? value : JSON.stringify(value);
 }
 
-export function createAgentWithXStateMachine<TMachine extends AnyStateMachine>(
+export function createAgent<TMachine extends AnyStateMachine>(
   args: CreateAgentWithXStateMachineArgs<TMachine>
 ): AgentWithXStateMachine<TMachine> {
   const { agentOptions, machine, resolveTools, actorOptions, hooks, eventBus } = args;

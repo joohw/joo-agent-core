@@ -10,7 +10,7 @@
 
 | 路径 | 说明 |
 |------|------|
-| `src/agent/createAgentWithXStateMachine.ts` | 将 XState `Actor` 与 `Agent` 绑定：`setTools`、`beforeToolCall`；`subscribeStateChange` / `subscribe` / 可选 `eventBus` 的 `state_change`（与 `AgentEvent` 并行，可用 `subscribe` 合并） |
+| `src/agent/createAgent.ts` | 将 XState `Actor` 与 `Agent` 绑定：`setTools`、`beforeToolCall`；`subscribeStateChange` / `subscribe` / 可选 `eventBus` 的 `state_change`（与 `AgentEvent` 并行，可用 `subscribe` 合并） |
 | `src/machine/xstateHelpers.ts` | 例如从 `state.meta.tools` 解析工具列表 |
 | `src/event/eventBus.ts` | 通用事件总线（见下「事件总线」） |
 | `src/index.ts` | 公共 API 聚合导出 |
@@ -18,7 +18,7 @@
 
 ### 事件总线
 
-`createEventBus` 不提供固定事件名：由你在泛型 `TEvents` 里声明。集成层会发出 **`state_change`**（`StateChangePayload`：`from` / `to`）：通过 **`subscribeStateChange`**，或 **`eventBus`** 传入 `createAgentWithXStateMachine`（`emit` 名见 `STATE_CHANGE_EVENT`）。也可在 `hooks.onTransition` 里自行 `emit` 到自建总线。以上均与 **Agent 流式 `AgentEvent`** 无关。
+`createEventBus` 不提供固定事件名：由你在泛型 `TEvents` 里声明。集成层会发出 **`state_change`**（`StateChangePayload`：`from` / `to`）：通过 **`subscribeStateChange`**，或 **`eventBus`** 传入 `createAgent`（`emit` 名见 `STATE_CHANGE_EVENT`）。也可在 `hooks.onTransition` 里自行 `emit` 到自建总线。以上均与 **Agent 流式 `AgentEvent`** 无关。
 
 修改对外 API 时同步更新 `package.json` 的 `exports` 与 `src/index.ts`（及子路径 `agent` / `machine` / `event`）。
 
@@ -50,4 +50,4 @@
 
 ## 可选：可视化状态机
 
-`createAgentWithXStateMachine.ts` 文件注释中提到了 Stately Studio / VS Code Stately 扩展；复杂图表优先在状态机侧保持可读，再接到 agent。
+`createAgent.ts` 文件注释中提到了 Stately Studio / VS Code Stately 扩展；复杂图表优先在状态机侧保持可读，再接到 agent。

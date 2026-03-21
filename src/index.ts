@@ -2,7 +2,7 @@ export { createEventBus, type EventBus, type EventUnsubscribe } from "./event/in
 export { toolsFromMeta, type ToolPhaseMeta } from "./machine/index.js";
 export {
   STATE_CHANGE_EVENT,
-  createAgentWithXStateMachine,
+  createAgent,
   type AgentWithMachineEvent,
   type AgentWithXStateMachine,
   type CreateAgentWithXStateMachineArgs,

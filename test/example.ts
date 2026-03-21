@@ -13,7 +13,7 @@ import type { AgentTool } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage } from "@mariozechner/pi-ai";
 import { getModel } from "@mariozechner/pi-ai";
 import { createActor, setup, type Actor } from "xstate";
-import { createAgentWithXStateMachine } from "../src/agent/createAgentWithXStateMachine.js";
+import { createAgent } from "../src/agent/createAgent.js";
 import { toolsFromMeta } from "../src/machine/xstateHelpers.js";
 
 const hasKimiKey = Boolean(process.env.KIMI_API_KEY?.trim());
@@ -116,10 +116,10 @@ const toolWorkflow = setup({
   },
 });
 
-/** Set immediately after `createAgentWithXStateMachine` so `deriveEventFromTool` can read the current state. */
+/** Set immediately after `createAgent` so `deriveEventFromTool` can read the current state. */
 let actorForPhaseHooks: Actor<typeof toolWorkflow> | null = null;
 
-const { agent, actor, send, subscribe } = createAgentWithXStateMachine({
+const { agent, actor, send, subscribe } = createAgent({
   agentOptions: {
     initialState: {
       systemPrompt: [
