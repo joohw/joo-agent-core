@@ -9,7 +9,7 @@
  */
 import "dotenv/config";
 import { Type } from "@sinclair/typebox";
-import type { AgentTool } from "@mariozechner/pi-agent-core";
+import type { AgentTool } from "../src/pi-agent/types.js";
 import type { AssistantMessage } from "@mariozechner/pi-ai";
 import { getModel } from "@mariozechner/pi-ai";
 import { createActor, setup, type Actor } from "xstate";
@@ -119,7 +119,7 @@ const toolWorkflow = setup({
 /** Set immediately after `createAgent` so `deriveEventFromTool` can read the current state. */
 let actorForPhaseHooks: Actor<typeof toolWorkflow> | null = null;
 
-const { agent, actor, send, subscribe } = createAgent({
+const { agent, actor, send } = createAgent({
   agentOptions: {
     initialState: {
       systemPrompt: [
@@ -134,7 +134,7 @@ const { agent, actor, send, subscribe } = createAgent({
       model: exampleModel,
     },
   },
-  machine: toolWorkflow,
+  machine: { id: "workflow", machine: toolWorkflow },
   resolveTools: (s) => toolsFromMeta(s),
   hooks: {
     deriveEventFromTool: (ctx):
@@ -146,10 +146,11 @@ const { agent, actor, send, subscribe } = createAgent({
       const a = actorForPhaseHooks;
       if (!a) return undefined;
       const value = a.getSnapshot().value;
-      if (ctx.toolCall.name === "read_operator_manual" && value === "readManual") {
+      const localToolName = ctx.toolCall.name.split(".").slice(1).join(".");
+      if (localToolName === "read_operator_manual" && value === "readManual") {
         return { type: "manual_done" };
       }
-      if (ctx.toolCall.name !== "mark_phase_done") return undefined;
+      if (localToolName !== "mark_phase_done") return undefined;
       if (value === "gather") return { type: "gather_done" };
       if (value === "act") return { type: "act_done" };
       if (value === "review") return { type: "review_done" };
@@ -157,23 +158,14 @@ const { agent, actor, send, subscribe } = createAgent({
     },
   },
 });
-actorForPhaseHooks = actor;
+actorForPhaseHooks = actor ?? null;
 
 void send; // e.g. send({ type: "gather_done" }) from UI
 
 /** Count streamed text so we can print non-streaming completions (some providers batch output → few/no `text_delta` events). */
 let streamedTextChars = 0;
 
-/**
- * 单一订阅：`kind: "agent"` 为 pi-agent 流式协议；`kind: "state_change"` 为 XState（仅状态值变化；未调用 **mark_phase_done** 则不会进入下一阶段）。
- */
-subscribe((u) => {
-  if (u.kind === "state_change") {
-    const { from, to } = u.payload;
-    console.error(`[state_change] ${JSON.stringify(from)} → ${JSON.stringify(to)}`);
-    return;
-  }
-  const ev = u.event;
+agent.subscribe((ev) => {
   if (ev.type === "agent_start") {
     console.error("[agent] started");
     return;
@@ -251,10 +243,10 @@ if (!hasKimiKey) {
 
 try {
   console.error("[example] kimi-coding / k2p5");
-  console.error("[xstate] initial", JSON.stringify(actor.getSnapshot().value));
+  if (actor) console.error("[xstate] initial", JSON.stringify(actor.getSnapshot().value));
   await agent.prompt("I want to plan a small CLI tool, then build it, then review.");
   if (agent.state.error) console.error("\n[example] agent.state.error:", agent.state.error);
-  console.error("\n[xstate] final", JSON.stringify(actor.getSnapshot().value));
+  if (actor) console.error("\n[xstate] final", JSON.stringify(actor.getSnapshot().value));
   console.error("\n[example] prompt finished");
 } catch (err) {
   console.error("\n[example] prompt failed:", err);

@@ -10,15 +10,17 @@
 
 | 路径 | 说明 |
 |------|------|
-| `src/agent/createAgent.ts` | 将 XState `Actor` 与 `Agent` 绑定：`setTools`、`beforeToolCall`；`subscribeStateChange` / `subscribe` / 可选 `eventBus` 的 `state_change`（与 `AgentEvent` 并行，可用 `subscribe` 合并） |
-| `src/machine/xstateHelpers.ts` | 例如从 `state.meta.tools` 解析工具列表 |
+| `src/agent/createAgent.ts` | 将可选 XState actor 与 `Agent` 绑定：`setTools`、`beforeToolCall`、namespaced tools（`${machineId}.${toolName}`） |
+| `src/agent/index.ts` | 对外统一入口 `Agent(...)`（覆盖/增强 pi-agent），并透出 `createAgent` 与类型 |
+| `src/machine/types.ts` | machine 相关类型（`MachineSpec` / `MachineSpecs`） |
+| `src/machine/xstateHelpers.ts` | 例如从 `state.meta.tools` 解析工具列表（常用于 `resolveTools`） |
 | `src/event/eventBus.ts` | 通用事件总线（见下「事件总线」） |
 | `src/index.ts` | 公共 API 聚合导出 |
 | `test/example.ts` | 可运行示例：分阶段工具 + Kimi For Coding（`kimi-coding`） |
 
 ### 事件总线
 
-`createEventBus` 不提供固定事件名：由你在泛型 `TEvents` 里声明。集成层会发出 **`state_change`**（`StateChangePayload`：`from` / `to`）：通过 **`subscribeStateChange`**，或 **`eventBus`** 传入 `createAgent`（`emit` 名见 `STATE_CHANGE_EVENT`）。也可在 `hooks.onTransition` 里自行 `emit` 到自建总线。以上均与 **Agent 流式 `AgentEvent`** 无关。
+`createEventBus` 是通用工具，本包不再额外定义 `state_change` 一类状态事件。对 UI 更新建议优先依赖 `agent.subscribe` 的 `AgentEvent`，或在需要时主动读取 `actors?.get(id)?.getSnapshot()`。
 
 修改对外 API 时同步更新 `package.json` 的 `exports` 与 `src/index.ts`（及子路径 `agent` / `machine` / `event`）。
 

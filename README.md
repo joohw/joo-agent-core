@@ -22,9 +22,9 @@ npm install joo-agent-core
 ## 工作原理（简要）
 
 1. 在状态 `meta` 里声明各阶段工具（或用自定义 `resolveTools`）。
-2. `createAgent` 创建 `Agent` + XState `actor`；快照变化时 **`setTools`**，与图上可用工具一致。
+2. `createAgent` 创建 `Agent`（可选 machine：传入时会启动 XState actor）；快照变化时 **`setTools`**，与图上可用工具一致。
 3. 模型只能调用当前快照允许的工具；否则 `beforeToolCall` 返回 block。
-4. 可选：`afterToolCall` 链上根据工具结果 `deriveEventFromTool` → `actor.send`（仅当 `snapshot.can(event)`）。
+4. 可选：`afterToolCall` 链上根据工具结果 `deriveEventFromTool` → `send(event)`（仅当对应 machine `snapshot.can(event)`）。
 
 ## 用法示例
 
@@ -35,14 +35,12 @@ const { agent, send } = createAgent({
   agentOptions: {
     initialState: { model, systemPrompt: "...", tools: [] },
   },
-  machine: yourMachine,
+  // 可选：不传 machine 时等价于“仅基础 tools”的 agent
+  machine: { id: "workflow", machine: yourMachine },
   resolveTools: (snapshot) => toolsFromMeta(snapshot),
   hooks: {
     deriveEventFromTool: (ctx) => {
       /* 返回 XState 事件，或 undefined */
-    },
-    onTransition: ({ from, to }) => {
-      /* 可选 */
     },
   },
 });
@@ -52,16 +50,7 @@ await agent.prompt("...");
 
 ## 事件与订阅
 
-
-| 方式                                | 内容                                                                                                         |
-| --------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `agent.subscribe`                 | 仅 pi-agent 流式事件（如 `tool_execution_*` 等）。                                                                   |
-| `subscribeStateChange`            | 仅 XState 状态值变化 `{ from, to }`。                                                                             |
-| `subscribe`                       | **合并** 上述两类：`{ kind: "agent", event }` 与 `{ kind: "state_change", payload }`（类型见 `AgentWithMachineEvent`）。 |
-| `eventBus` + `STATE_CHANGE_EVENT` | 把 `state_change` 接到你自己的 `createEventBus` 泛型里，与应用其它事件并列。                                                    |
-
-
-`state_change` 与 `eventBus` 的投递在微任务中排队，以便在由 `afterToolCall` 触发的迁移场景下，与 pi-agent 的 `tool_execution_end` 顺序一致（详见源码注释）。
+本包不额外定义“状态变化事件”。订阅统一使用 `agent.subscribe(...)`（pi-agent 的流式事件，如 `message_*` / `tool_execution_*`）。
 
 ## 子路径导出
 
@@ -69,8 +58,8 @@ await agent.prompt("...");
 | 子路径                      | 说明                                                                   |
 | ------------------------ | -------------------------------------------------------------------- |
 | `joo-agent-core`         | 主入口，聚合导出                                                             |
-| `joo-agent-core/agent`   | `createAgent`、`subscribe`、`STATE_CHANGE_EVENT`、相关类型 |
-| `joo-agent-core/machine` | `toolsFromMeta`、`ToolPhaseMeta`                                      |
+| `joo-agent-core/agent`   | `Agent`、`createAgent`、相关类型 |
+| `joo-agent-core/machine` | `toolsFromMeta`、`ToolPhaseMeta`、`MachineSpec` / `MachineSpecs`                                      |
 | `joo-agent-core/event`   | `createEventBus`                                                     |
 
 

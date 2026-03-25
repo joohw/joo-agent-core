@@ -1,4 +1,4 @@
-import type { AgentTool } from "@mariozechner/pi-agent-core";
+import type { AgentTool } from "../pi-agent/types.js";
 
 /** Meta shape attached to state nodes that expose tools to the LLM */
 export interface ToolPhaseMeta {
