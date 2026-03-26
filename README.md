@@ -48,6 +48,34 @@ const { agent, send } = createAgent({
 await agent.prompt("...");
 ```
 
+### 处理中追加（中断 + 合并后续消息）
+
+当你希望“当前这轮先打断，后续碎片消息合并后再发”，可用 `interruptAndAppend`：
+
+```ts
+// 可在用户连续输入时反复调用
+await agent.interruptAndAppend("先别按刚才的来");
+await agent.interruptAndAppend("补充：目标改成 CLI");
+await agent.interruptAndAppend("再补充：要支持 dry-run");
+
+// 默认会：
+// 1) 若 agent 正在处理，则 abort 当前轮次
+// 2) 将处理中收到的后续消息放入候选区
+// 3) 按 debounce 窗口（默认 400ms）合并后作为下一次 prompt 发送
+```
+
+可在 `agentOptions` 里设置默认窗口：
+
+```ts
+const { agent } = createAgent({
+  agentOptions: {
+    initialState: { model, systemPrompt: "...", tools: [] },
+    interruptDebounceMs: 500,
+  },
+  resolveTools: () => [],
+});
+```
+
 ## 事件与订阅
 
 本包不额外定义“状态变化事件”。订阅统一使用 `agent.subscribe(...)`（pi-agent 的流式事件，如 `message_*` / `tool_execution_*`）。

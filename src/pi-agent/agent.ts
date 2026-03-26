@@ -111,6 +111,18 @@ export interface AgentOptions {
 
 	/** Called after a tool finishes executing, before final tool events are emitted. */
 	afterToolCall?: (context: AfterToolCallContext, signal?: AbortSignal) => Promise<AfterToolCallResult | undefined>;
+
+	/**
+	 * Default debounce window (ms) for interrupt-and-append buffering.
+	 * Used by `interruptAndAppend(...)` when no per-call debounce is provided.
+	 * Default: 400
+	 */
+	interruptDebounceMs?: number;
+}
+
+export interface InterruptAndAppendOptions {
+	/** Debounce window in milliseconds before flushing buffered messages. */
+	debounceMs?: number;
 }
 
 export class Agent {
@@ -152,6 +164,10 @@ export class Agent {
 		context: AfterToolCallContext,
 		signal?: AbortSignal,
 	) => Promise<AfterToolCallResult | undefined>;
+	private _interruptDebounceMs: number;
+	private interruptDraft: AgentMessage[] = [];
+	private interruptTimer?: ReturnType<typeof setTimeout>;
+	private interruptFlushRunning = false;
 
 	constructor(opts: AgentOptions = {}) {
 		this._state = { ...this._state, ...opts.initialState };
@@ -169,6 +185,7 @@ export class Agent {
 		this._toolExecution = opts.toolExecution ?? "parallel";
 		this._beforeToolCall = opts.beforeToolCall;
 		this._afterToolCall = opts.afterToolCall;
+		this._interruptDebounceMs = opts.interruptDebounceMs ?? 400;
 	}
 
 	/**
@@ -373,6 +390,25 @@ export class Agent {
 
 	abort() {
 		this.abortController?.abort();
+	}
+
+	/**
+	 * Interrupt current processing (if any), buffer the new input, merge buffered
+	 * fragments, and send them as the next prompt after a debounce window.
+	 *
+	 * Behavior:
+	 * - The currently processing prompt is never merged into this buffer.
+	 * - Messages appended while processing are merged together and sent next.
+	 * - While idle, the same buffering/debounce logic applies, useful for rapid typing.
+	 */
+	async interruptAndAppend(
+		message: AgentMessage | AgentMessage[] | string,
+		options?: InterruptAndAppendOptions,
+	): Promise<void> {
+		const normalized = this.normalizePromptInput(message);
+		this.interruptDraft.push(...normalized);
+		if (this._state.isStreaming) this.abort();
+		this.scheduleInterruptFlush(options?.debounceMs);
 	}
 
 	waitForIdle(): Promise<void> {
@@ -608,6 +644,80 @@ export class Agent {
 	private emit(e: AgentEvent) {
 		for (const listener of this.listeners) {
 			listener(e);
+		}
+	}
+
+	private normalizePromptInput(input: string | AgentMessage | AgentMessage[], images?: ImageContent[]): AgentMessage[] {
+		if (Array.isArray(input)) return input;
+		if (typeof input === "string") {
+			const content: Array<TextContent | ImageContent> = [{ type: "text", text: input }];
+			if (images && images.length > 0) content.push(...images);
+			return [
+				{
+					role: "user",
+					content,
+					timestamp: Date.now(),
+				},
+			];
+		}
+		return [input];
+	}
+
+	private scheduleInterruptFlush(debounceMs?: number) {
+		const delay = debounceMs ?? this._interruptDebounceMs;
+		if (this.interruptTimer) clearTimeout(this.interruptTimer);
+		this.interruptTimer = setTimeout(() => {
+			void this.flushInterruptDraft();
+		}, Math.max(0, delay));
+	}
+
+	private mergeInterruptDraft(messages: AgentMessage[]): AgentMessage | AgentMessage[] {
+		const allUserTextOnly = messages.every(
+			(m) =>
+				m.role === "user" &&
+				Array.isArray((m as any).content) &&
+				(m as any).content.every((c: any) => c?.type === "text"),
+		);
+		if (!allUserTextOnly) return messages;
+		const text = messages
+			.map((m) => (m as any).content.map((c: any) => c.text).join(""))
+			.filter((t: string) => t.length > 0)
+			.join("\n");
+		return {
+			role: "user",
+			content: [{ type: "text", text }],
+			timestamp: Date.now(),
+		} as AgentMessage;
+	}
+
+	private async flushInterruptDraft(): Promise<void> {
+		if (this.interruptFlushRunning) return;
+		this.interruptFlushRunning = true;
+		try {
+			if (this.interruptTimer) {
+				clearTimeout(this.interruptTimer);
+				this.interruptTimer = undefined;
+			}
+			await this.waitForIdle();
+			if (this._state.isStreaming) return;
+			if (this.interruptDraft.length === 0) return;
+
+			const draft = this.interruptDraft.slice();
+			this.interruptDraft = [];
+			const merged = this.mergeInterruptDraft(draft);
+			try {
+				await this.prompt(merged);
+			} catch {
+				// If a concurrent caller starts another prompt first, re-buffer and retry later.
+				if (Array.isArray(merged)) this.interruptDraft.unshift(...merged);
+				else this.interruptDraft.unshift(merged);
+				this.scheduleInterruptFlush();
+			}
+		} finally {
+			this.interruptFlushRunning = false;
+			if (!this._state.isStreaming && this.interruptDraft.length > 0 && !this.interruptTimer) {
+				this.scheduleInterruptFlush();
+			}
 		}
 	}
 }
