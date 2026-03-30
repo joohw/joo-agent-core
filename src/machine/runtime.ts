@@ -54,6 +54,12 @@ export function createMachineRuntime<TState extends string>(args: {
   machine?: MachineSpec<TState> | MachineSpecs<TState>;
   resolveTools: (snapshot: unknown, machineId?: string) => AgentTool[];
   baseTools?: AgentTool[];
+  /** Called after a machine’s snapshot `value` changes (any transition). */
+  onMachineStateChange?: (payload: {
+    machineId: string;
+    previousValue: string;
+    nextValue: string;
+  }) => void;
 }): MachineRuntime {
   const baseTools = Array.isArray(args.baseTools) ? args.baseTools : [];
   const machineSpecs = normalizeMachineSpecs(args.machine);
@@ -70,6 +76,27 @@ export function createMachineRuntime<TState extends string>(args: {
   }
 
   const phase = machineIds.length > 0 ? (phases.get(machineIds[0]) as MachineHandle) : undefined;
+
+  if (args.onMachineStateChange && machineIds.length > 0) {
+    const lastValueByMachine = new Map<string, string>();
+    for (const id of machineIds) {
+      const a = phases.get(id);
+      if (!a) continue;
+      lastValueByMachine.set(id, stateValueKey(a.getSnapshot().value));
+      a.subscribe(() => {
+        const next = stateValueKey(a.getSnapshot().value);
+        const prev = lastValueByMachine.get(id);
+        if (prev !== undefined && prev !== next) {
+          args.onMachineStateChange!({
+            machineId: id,
+            previousValue: prev,
+            nextValue: next,
+          });
+        }
+        lastValueByMachine.set(id, next);
+      });
+    }
+  }
 
   function getToolsByMachineId(machineId: string): AgentTool[] {
     const a = phases.get(machineId);

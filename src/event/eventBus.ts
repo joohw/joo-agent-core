@@ -1,9 +1,9 @@
 /**
- * 应用级事件总线：仍是通用的 `on` / `emit` / `clear`，与 `@mariozechner/pi-agent-core` 的
+ * 应用级事件总线：通用的 `on` / `emit` / `clear`，与 `@mariozechner/pi-agent-core` 的
  * {@link AgentEvent} 流式协议无关。
  *
- * 典型用法：在泛型里包含 `state_change: StateChangePayload`（见 `createAgent` 的
- * `eventBus` 参数与 `STATE_CHANGE_EVENT`），或自行在 `hooks.onTransition` 里 `emit`；与 `AgentEvent` 仍无关。
+ * 阶段机状态变化：向 {@link createAgent} 传入 `eventBus` 时，会在
+ * {@link STATE_CHANGE_EVENT} 上发出 {@link MachineStateChangePayload}（见 `src/event/stateChange.ts`）。
  */
 export type EventUnsubscribe = () => void;
 

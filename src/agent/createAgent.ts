@@ -16,6 +16,8 @@ import { validateToolArguments } from "@mariozechner/pi-ai";
 import type { AssistantMessage, ToolCall } from "@mariozechner/pi-ai";
 import { randomUUID } from "node:crypto";
 import { compact } from "../compact/index.js";
+import type { EventBus } from "../event/eventBus.js";
+import { STATE_CHANGE_EVENT, type AgentPhaseEventBus } from "../event/stateChange.js";
 import { createMachineRuntime, type MachineRuntime } from "../machine/runtime.js";
 import type { MachineEvent, MachineHandle, MachineSnapshot } from "../machine/machine.js";
 import type { MachineSpec, MachineSpecs } from "../machine/types.js";
@@ -37,6 +39,11 @@ export interface AgentConfig<TState extends string = string, TEvent extends Mach
   machine?: MachineSpec<TState> | MachineSpecs<TState>;
   resolveTools: (snapshot: MachineSnapshot, machineId?: string) => AgentTool[];
   hooks?: Hooks<TEvent>;
+  /**
+   * When set, each phase machine state transition emits {@link STATE_CHANGE_EVENT}
+   * with {@link MachineStateChangePayload} (see `src/event/stateChange.ts`).
+   */
+  eventBus?: EventBus<AgentPhaseEventBus>;
   sessionStore?: SessionStore;
   sessionId?: string;
   persistSystemPrompt?: boolean;
@@ -64,6 +71,8 @@ export interface Agent<TEvent extends MachineEvent = MachineEvent> {
   readonly phase?: MachineHandle;
   readonly phases?: ReadonlyMap<string, MachineHandle>;
   readonly runtime: MachineRuntime;
+  /** Same reference as {@link AgentConfig.eventBus} when provided. */
+  readonly eventBus?: EventBus<AgentPhaseEventBus>;
   send(event: TEvent): void;
   runManualTool(args: {
     name: string;
@@ -101,7 +110,7 @@ export function Agent<TState extends string = string, TEvent extends MachineEven
 export const createAgent = Agent;
 
 function buildAgent<TState extends string, TEvent extends MachineEvent>(args: Config<TState, TEvent>): Agent<TEvent> {
-  const { agentOptions, resolveTools, hooks } = args;
+  const { agentOptions, resolveTools, hooks, eventBus } = args;
   const baseTools: AgentTool[] = Array.isArray(agentOptions.initialState?.tools)
     ? (agentOptions.initialState?.tools as AgentTool[])
     : [];
@@ -109,6 +118,11 @@ function buildAgent<TState extends string, TEvent extends MachineEvent>(args: Co
     machine: args.machine,
     resolveTools: (snapshot, machineId) => resolveTools(snapshot as MachineSnapshot, machineId),
     baseTools,
+    onMachineStateChange: eventBus
+      ? (payload) => {
+          eventBus.emit(STATE_CHANGE_EVENT, payload);
+        }
+      : undefined,
   });
 
   const guardBefore = async (
@@ -301,6 +315,7 @@ function buildAgent<TState extends string, TEvent extends MachineEvent>(args: Co
     agent: llm,
     ...(runtime.phase ? { phase: runtime.phase } : {}),
     ...(runtime.phases ? { phases: runtime.phases } : {}),
+    ...(eventBus ? { eventBus } : {}),
     runtime,
     runManualTool,
     send(event: TEvent) {

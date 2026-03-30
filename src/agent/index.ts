@@ -6,4 +6,6 @@ export {
   type Hooks,
   type ManualToolResult,
 } from "./createAgent.js";
+export type { AgentPhaseEventBus } from "../event/stateChange.js";
+export { STATE_CHANGE_EVENT, type MachineStateChangePayload } from "../event/stateChange.js";
 export { Agent as Core } from "../pi-agent/index.js";

@@ -1,4 +1,11 @@
-export { createEventBus, type EventBus, type EventUnsubscribe } from "./event/index.js";
+export {
+  createEventBus,
+  type EventBus,
+  type EventUnsubscribe,
+  STATE_CHANGE_EVENT,
+  type AgentPhaseEventBus,
+  type MachineStateChangePayload,
+} from "./event/index.js";
 export {
   toolsFromMeta,
   type ToolPhaseMeta,

@@ -13,6 +13,7 @@ import type { AgentTool } from "../src/pi-agent/types.js";
 import type { AssistantMessage } from "@mariozechner/pi-ai";
 import { getModel } from "@mariozechner/pi-ai";
 import { createAgent } from "../src/agent/createAgent.js";
+import { createEventBus, STATE_CHANGE_EVENT, type AgentPhaseEventBus } from "../src/event/index.js";
 import { createMachine, type MachineHandle } from "../src/machine/machine.js";
 import { toolsFromMeta } from "../src/machine/metaHelpers.js";
 import { sumSessionTotalTokens } from "./sumAssistantUsage.js";
@@ -102,7 +103,10 @@ const petMachine = {
 /** Set immediately after `createAgent` so `deriveEventFromTool` can read the current state. */
 let petActorForHooks: MachineHandle | null = null;
 
+const phaseEventBus = createEventBus<AgentPhaseEventBus>();
+
 const { agent, phase: petPhase, send } = createAgent({
+  eventBus: phaseEventBus,
   agentOptions: {
     initialState: {
       systemPrompt: [
@@ -148,6 +152,10 @@ const { agent, phase: petPhase, send } = createAgent({
 petActorForHooks = petPhase ?? null;
 
 void send; // e.g. send({ type: "woke" }) from UI
+
+phaseEventBus.on(STATE_CHANGE_EVENT, (p) => {
+  console.error(`[pet] state_change ${p.machineId}: ${JSON.stringify(p.previousValue)} → ${JSON.stringify(p.nextValue)}`);
+});
 
 /** Count streamed text so we can print non-streaming completions (some providers batch output → few/no `text_delta` events). */
 let streamedTextChars = 0;

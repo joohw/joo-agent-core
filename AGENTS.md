@@ -24,7 +24,7 @@
 
 ### 事件总线
 
-`createEventBus` 是通用工具，本包不再额外定义 `state_change` 一类状态事件。对 UI 更新建议优先依赖 `agent.subscribe` 的 `AgentEvent`，或在需要时主动读取 `actors?.get(id)?.getSnapshot()`。
+`createEventBus` 为通用 `on` / `emit`。`createAgent` 可传入 **`eventBus`**（`EventBus<AgentPhaseEventBus>`）：阶段机每次状态变化会在 **`state_change`** 上发出 **`MachineStateChangePayload`**（`machineId`、`previousValue`、`nextValue`），与 `AgentEvent` 流无关。仍可用 `agent.subscribe` 或 `phase?.getSnapshot()` 做补充。
 
 修改对外 API 时同步更新 `package.json` 的 `exports` 与 `src/index.ts`（及子路径 `agent` / `machine` / `event`）。
 
