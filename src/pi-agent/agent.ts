@@ -580,6 +580,7 @@ export class Agent {
 			thinkingBudgets: this._thinkingBudgets,
 			maxRetryDelayMs: this._maxRetryDelayMs,
 			toolExecution: this._toolExecution,
+			getTools: () => this._state.tools,
 			beforeToolCall: this._beforeToolCall,
 			afterToolCall: this._afterToolCall,
 			convertToLlm: this.convertToLlm,

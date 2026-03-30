@@ -20,6 +20,8 @@
 | `src/index.ts` | 公共 API 聚合导出 |
 | `test/example.ts` | 可运行示例：宠物养成状态机 + Kimi For Coding（`kimi-coding`） |
 
+状态机切换工具时，`subscribeToolsChanged` 会调用 `setTools`（**替换** `Agent` 内部的 tools 数组）。`Agent` 循环在每次发起 LLM 请求和每次准备工具调用前，用当前的 `getTools()` 写回 `context.tools`，否则同一次 `prompt` 里下一轮仍会带上旧工具列表。
+
 ### 事件总线
 
 `createEventBus` 是通用工具，本包不再额外定义 `state_change` 一类状态事件。对 UI 更新建议优先依赖 `agent.subscribe` 的 `AgentEvent`，或在需要时主动读取 `actors?.get(id)?.getSnapshot()`。

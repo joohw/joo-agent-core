@@ -1,11 +1,14 @@
 /**
- * Demo: pet-care state machine — each state exposes only allowed actions (feed / walk / sleep / …).
- * Run: npx tsx test/example.ts  （或 npm run example）
+ * Demo: **同 example.ts 的电子宠物场景**，但**不使用状态机** —— 全部工具始终注册在列表里，便于与 `example.ts` 对比。
+ *
+ * - `example.ts`：状态决定当前可见工具，非法调用会被拦截。
+ * - `example2`：无 phase FSM，模型始终看到 `wake_up` / `feed` / … 全套工具，依赖提示词与模型自律。
+ *
+ * Run: npx tsx test/example2.ts  （或 npm run example2）
  * Requires provider API keys (see @mariozechner/pi-ai).
  * Loads `.env` from repo root when present (see dotenv).
  *
  * Live calls use **Kimi For Coding** only: `KIMI_API_KEY` + `getModel("kimi-coding", "k2p5")`.
- * That key must be issued for `api.kimi.com/coding` (not the same as Moonshot `api.moonshot.cn` keys).
  */
 import "dotenv/config";
 import { Type } from "@sinclair/typebox";
@@ -13,16 +16,11 @@ import type { AgentTool } from "../src/pi-agent/types.js";
 import type { AssistantMessage } from "@mariozechner/pi-ai";
 import { getModel } from "@mariozechner/pi-ai";
 import { createAgent } from "../src/agent/createAgent.js";
-import { createMachine, type MachineHandle } from "../src/machine/machine.js";
-import { toolsFromMeta } from "../src/machine/metaHelpers.js";
-import { parseNamespacedToolName } from "../src/machine/runtime.js";
 import { formatUsageLine, sumAssistantUsage } from "./sumAssistantUsage.js";
 
 const hasKimiKey = Boolean(process.env.KIMI_API_KEY?.trim());
 
 const exampleModel = getModel("kimi-coding", "k2p5");
-
-const PET_MACHINE_ID = "pet" as const;
 
 function actionTool(
   name: string,
@@ -44,32 +42,21 @@ function actionTool(
   };
 }
 
-/** 睡觉中：只能叫醒 */
-const toolsSleeping: AgentTool[] = [
+/**
+ * 与 example 各状态 meta.tools 的并集（去重）：始终全部暴露给模型。
+ * 工具描述与 example 一致，便于对照。
+ */
+const tools: AgentTool[] = [
   actionTool(
     "wake_up",
     "叫醒宠物",
     "宠物在睡觉。只有叫醒之后才能喂食或出门。",
     (n) => `[叫醒] ${n}`
   ),
-];
-
-/** 空闲：喂食、出门散步、直接哄睡 */
-const toolsIdle: AgentTool[] = [
   actionTool("feed", "喂食", "给宠物喂食。吃完会进入「吃饱」状态，此时不能再喂，需要先玩或散步。", (n) => `[喂食] ${n}`),
   actionTool("go_walk", "出门散步", "带宠物出门散步（进入「散步中」）。", (n) => `[出门散步] ${n}`),
   actionTool("lights_out", "关灯睡觉", "结束一天，让宠物入睡。", (n) => `[睡觉] ${n}`),
-];
-
-/** 刚吃饱：不能马上再喂，可以玩、散步或睡觉 */
-const toolsFed: AgentTool[] = [
   actionTool("play", "玩耍", "和宠物玩一会儿，消化一下，回到「空闲」。", (n) => `[玩耍] ${n}`),
-  actionTool("go_walk", "出门散步", "带宠物出门散步（进入「散步中」）。", (n) => `[出门散步] ${n}`),
-  actionTool("lights_out", "关灯睡觉", "让宠物入睡。", (n) => `[睡觉] ${n}`),
-];
-
-/** 散步中：只能回家 */
-const toolsWalking: AgentTool[] = [
   actionTool(
     "finish_walk",
     "散步结束回家",
@@ -78,32 +65,7 @@ const toolsWalking: AgentTool[] = [
   ),
 ];
 
-const petMachine = {
-  initial: "sleeping" as const,
-  states: {
-    sleeping: {
-      meta: { tools: toolsSleeping },
-      on: { woke: "idle" },
-    },
-    idle: {
-      meta: { tools: toolsIdle },
-      on: { fed: "fed", walk: "walking", bedtime: "sleeping" },
-    },
-    fed: {
-      meta: { tools: toolsFed },
-      on: { played: "idle", walk: "walking", bedtime: "sleeping" },
-    },
-    walking: {
-      meta: { tools: toolsWalking },
-      on: { walk_done: "idle" },
-    },
-  },
-};
-
-/** Set immediately after `createAgent` so `deriveEventFromTool` can read the current state. */
-let petActorForHooks: MachineHandle | null = null;
-
-const { agent, phase: petPhase, send } = createAgent({
+const { agent } = createAgent({
   agentOptions: {
     initialState: {
       systemPrompt: [
@@ -118,38 +80,11 @@ const { agent, phase: petPhase, send } = createAgent({
         "请用简短中文回复用户，并在需要推进流程时调用合适的工具。",
       ].join("\n"),
       model: exampleModel,
+      tools,
     },
   },
-  machine: { id: PET_MACHINE_ID, machine: petMachine },
-  resolveTools: (s) => toolsFromMeta(s),
-  hooks: {
-    deriveEventFromTool: (ctx):
-      | { type: "woke" }
-      | { type: "fed" }
-      | { type: "walk" }
-      | { type: "bedtime" }
-      | { type: "played" }
-      | { type: "walk_done" }
-      | undefined => {
-      const a = petActorForHooks;
-      if (!a) return undefined;
-      const value = a.getSnapshot().value;
-      const parsed = parseNamespacedToolName(ctx.toolCall.name, [PET_MACHINE_ID]);
-      const local = parsed?.localName ?? ctx.toolCall.name;
-
-      if (local === "wake_up" && value === "sleeping") return { type: "woke" };
-      if (local === "feed" && value === "idle") return { type: "fed" };
-      if (local === "go_walk" && (value === "idle" || value === "fed")) return { type: "walk" };
-      if (local === "lights_out" && (value === "idle" || value === "fed")) return { type: "bedtime" };
-      if (local === "play" && value === "fed") return { type: "played" };
-      if (local === "finish_walk" && value === "walking") return { type: "walk_done" };
-      return undefined;
-    },
-  },
+  resolveTools: () => [],
 });
-petActorForHooks = petPhase ?? null;
-
-void send; // e.g. send({ type: "woke" }) from UI
 
 /** Count streamed text so we can print non-streaming completions (some providers batch output → few/no `text_delta` events). */
 let streamedTextChars = 0;
@@ -193,18 +128,18 @@ agent.subscribe((ev) => {
       streamedTextChars = 0;
       return;
     }
-    const tools = msg.content.filter((c) => c.type === "toolCall");
+    const tcs = msg.content.filter((c) => c.type === "toolCall");
     const text = msg.content
       .filter((c) => c.type === "text")
       .map((c) => c.text)
       .join("");
-    if (tools.length > 0) {
-      console.error("\n[assistant] tool call(s):", tools.map((t) => t.name).join(", "));
+    if (tcs.length > 0) {
+      console.error("\n[assistant] tool call(s):", tcs.map((t) => t.name).join(", "));
     }
     if (streamedTextChars === 0 && text.trim().length > 0) {
       console.error("\n[assistant] (non-streamed text)\n", text);
     }
-    if (streamedTextChars === 0 && text.trim().length === 0 && tools.length === 0) {
+    if (streamedTextChars === 0 && text.trim().length === 0 && tcs.length === 0) {
       console.error("\n[assistant] empty message (stopReason:", msg.stopReason, ")");
     }
     if (streamedTextChars > 0) {
@@ -223,27 +158,21 @@ agent.subscribe((ev) => {
 });
 
 if (!hasKimiKey) {
-  const dry = createMachine(petMachine);
-  const snap = dry.getSnapshot();
   console.error(
-    "Set KIMI_API_KEY in .env (Kimi For Coding) to run a live prompt. Initial state:",
-    snap.value,
-    "tools:",
-    toolsFromMeta(snap).map((t) => t.name)
+    "Set KIMI_API_KEY in .env (Kimi For Coding) to run a live prompt. [example2] static tool list (no state machine):",
+    tools.map((t) => t.name).join(", ")
   );
   process.exit(0);
 }
 
 try {
-  console.error("[example] kimi-coding / k2p5 — pet state machine");
-  if (petPhase) console.error("[pet] initial state:", JSON.stringify(petPhase.getSnapshot().value));
+  console.error("[example2] kimi-coding / k2p5 — same pet scenario as example, no state machine");
   await agent.prompt(
     "宠物现在在睡觉。请按照照顾流程照顾它：先叫醒，再喂食，然后带它出门散步，散步结束后哄它睡觉。每一步用对应工具完成，并简单告诉我发生了什么。"
   );
-  if (agent.state.error) console.error("\n[example] agent.state.error:", agent.state.error);
-  if (petPhase) console.error("\n[pet] final state:", JSON.stringify(petPhase.getSnapshot().value));
-  console.error("\n[example] prompt finished");
+  if (agent.state.error) console.error("\n[example2] agent.state.error:", agent.state.error);
+  console.error("\n[example2] prompt finished (no runtime phase — 无 final machine state 可打印)");
 } catch (err) {
-  console.error("\n[example] prompt failed:", err);
+  console.error("\n[example2] prompt failed:", err);
   process.exitCode = 1;
 }

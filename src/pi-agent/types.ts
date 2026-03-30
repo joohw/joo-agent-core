@@ -183,6 +183,15 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	getFollowUpMessages?: () => Promise<AgentMessage[]>;
 
 	/**
+	 * Returns the current tool list for the running loop.
+	 *
+	 * When set, the agent loop refreshes `context.tools` before each LLM request and before each
+	 * tool lookup, so `setTools()` on the Agent (replacing the tools array) stays visible inside
+	 * the same run — needed for dynamic tool sets (e.g. state machines that swap tools per state).
+	 */
+	getTools?: () => AgentTool[];
+
+	/**
 	 * Tool execution mode.
 	 * - "sequential": execute tool calls one by one
 	 * - "parallel": preflight tool calls sequentially, then execute allowed tools concurrently

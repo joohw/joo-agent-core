@@ -29,6 +29,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "example": "tsx test/example.ts",
+    "example2": "tsx test/example2.ts",
     "prepublishOnly": "npm run build"
   },
   "keywords": [],
