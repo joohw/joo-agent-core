@@ -12,6 +12,9 @@
 |------|------|
 | `src/agent/createAgent.ts` | 将可选阶段机与 `Agent` 绑定：`setTools`、`beforeToolCall`、按状态机合并工具列表（工具名在 base + 多机间须唯一） |
 | `src/agent/index.ts` | 对外统一入口 `Agent(...)`（覆盖/增强 pi-agent），并透出 `createAgent` 与类型 |
+| `src/agent/paths.ts` | 数据根路径：`defaultJooAgentRoot`、`sessions` / `skills` 子目录解析与 `ensureJooAgentDirs` |
+| `src/session/sessionStore.ts` | `SessionStore` / `AgentSessionData` 契约 |
+| `src/session/fileSessionStore.ts` | 基于 `paths` 的文件会话实现 `createFileSessionStore` |
 | `src/machine/types.ts` | machine 相关类型（`MachineSpec` / `MachineSpecs`） |
 | `src/machine/machine.ts` | 轻量 FSM：`initial` + `states` + `on`（`event.type` → 下一状态） |
 | `src/machine/metaHelpers.ts` | 例如从 `getMeta()` 解析 `tools`（常用于 `resolveTools`） |
@@ -26,7 +29,7 @@
 
 `createEventBus` 为通用 `on` / `emit`。`createAgent` 可传入 **`eventBus`**（`EventBus<AgentPhaseEventBus>`）：阶段机每次状态变化会在 **`state_change`** 上发出 **`MachineStateChangePayload`**（`machineId`、`previousValue`、`nextValue`），与 `AgentEvent` 流无关。仍可用 `agent.subscribe` 或 `phase?.getSnapshot()` 做补充。
 
-修改对外 API 时同步更新 `package.json` 的 `exports` 与 `src/index.ts`（及子路径 `agent` / `machine` / `event`）。
+修改对外 API 时同步更新 `package.json` 的 `exports` 与 `src/index.ts`（及子路径 `agent` / `session` / `machine` / `event`）。
 
 ## 环境与运行
 

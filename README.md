@@ -22,7 +22,7 @@ npm install joo-agent-core
 ## 工作原理（简要）
 
 1. 在状态 `meta` 里声明各阶段工具（或用自定义 `resolveTools`）。
-2. `createAgent` 创建 `Agent`（可选 `machine`：传入时会创建阶段机实例）；快照变化时 **`setTools`**，与当前阶段可用工具一致。
+2. `createAgent` 创建 `Agent`（可选 `machine`：传入时会创建阶段机实例）；快照变化时 **`setTools`**，与当前阶段可用工具一致。默认会把会话持久化到 **`~/.joo-agent-core/sessions`**（见 `defaultJooAgentRoot()`，`await createAgent(...)`）；若不要落盘，请传 **`sessionStore: false`**。
 3. 模型只能调用当前快照允许的工具；否则 `beforeToolCall` 返回 block。
 4. 可选：`afterToolCall` 链上根据工具结果 `deriveEventFromTool` → `send(event)`（仅当对应机在当前状态下能消费该事件，即 `can(event)`）。
 
@@ -31,7 +31,7 @@ npm install joo-agent-core
 ```ts
 import { createAgent, toolsFromMeta } from "joo-agent-core";
 
-const { agent, send } = createAgent({
+const { agent, send } = await createAgent({
   agentOptions: {
     initialState: { model, systemPrompt: "...", tools: [] },
   },
@@ -67,7 +67,7 @@ await agent.interruptAndAppend("再补充：要支持 dry-run");
 可在 `agentOptions` 里设置默认窗口：
 
 ```ts
-const { agent } = createAgent({
+const { agent } = await createAgent({
   agentOptions: {
     initialState: { model, systemPrompt: "...", tools: [] },
     interruptDebounceMs: 500,
@@ -86,7 +86,8 @@ const { agent } = createAgent({
 | 子路径                      | 说明                                                                   |
 | ------------------------ | -------------------------------------------------------------------- |
 | `joo-agent-core`         | 主入口，聚合导出                                                             |
-| `joo-agent-core/agent`   | `Agent`、`createAgent`、相关类型 |
+| `joo-agent-core/agent`   | `Agent`、`createAgent`、路径辅助（`defaultJooAgentRoot`、`resolveJooAgentDirs` 等）、相关类型 |
+| `joo-agent-core/session` | `SessionStore`、`createFileSessionStore`、`AgentSessionData` |
 | `joo-agent-core/machine` | `toolsFromMeta`、`createMachine`、`MachineDefinition`、`MachineSpec` / `MachineSpecs` |
 | `joo-agent-core/event`   | `createEventBus`                                                     |
 

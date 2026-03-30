@@ -22,6 +22,10 @@
       "types": "./dist/event/index.d.ts",
       "import": "./dist/event/index.js"
     },
+    "./session": {
+      "types": "./dist/session/index.d.ts",
+      "import": "./dist/session/index.js"
+    },
     "./built-in-skills": {
       "types": "./dist/built-in-skills/index.d.ts",
       "import": "./dist/built-in-skills/index.js"

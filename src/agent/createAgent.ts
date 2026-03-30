@@ -1,7 +1,6 @@
 import {
   Agent as Core,
   type AgentContext,
-  type AgentEvent,
   type AgentOptions,
   type AgentTool,
   type AgentToolResult,
@@ -21,6 +20,8 @@ import { STATE_CHANGE_EVENT, type AgentPhaseEventBus } from "../event/stateChang
 import { createMachineRuntime, type MachineRuntime } from "../machine/runtime.js";
 import type { MachineEvent, MachineHandle, MachineSnapshot } from "../machine/machine.js";
 import type { MachineSpec, MachineSpecs } from "../machine/types.js";
+import { createFileSessionStore } from "../session/fileSessionStore.js";
+import { defaultJooAgentRoot } from "./paths.js";
 import type { AgentSessionData, SessionStore } from "../session/sessionStore.js";
 
 /**
@@ -44,7 +45,14 @@ export interface AgentConfig<TState extends string = string, TEvent extends Mach
    * with {@link MachineStateChangePayload} (see `src/event/stateChange.ts`).
    */
   eventBus?: EventBus<AgentPhaseEventBus>;
-  sessionStore?: SessionStore;
+  /**
+   * - **`undefined` (default):** persist with {@link createFileSessionStore} under {@link jooAgentRoot} or {@link defaultJooAgentRoot}.
+   * - **`false`:** no persistence (memory only).
+   * - **`SessionStore`:** custom store.
+   */
+  sessionStore?: SessionStore | false;
+
+  jooAgentRoot?: string;
   sessionId?: string;
   persistSystemPrompt?: boolean;
   restoreSystemPrompt?: boolean;
@@ -92,18 +100,23 @@ export interface SessionAgent<TEvent extends MachineEvent = MachineEvent> extend
 type Config<TState extends string, TEvent extends MachineEvent> = AgentConfig<TState, TEvent>;
 
 export function Agent<TState extends string = string, TEvent extends MachineEvent = MachineEvent>(
-  args: Config<TState, TEvent> & { sessionStore?: undefined }
+  args: Config<TState, TEvent> & { sessionStore: false }
 ): Agent<TEvent>;
 export function Agent<TState extends string = string, TEvent extends MachineEvent = MachineEvent>(
   args: Config<TState, TEvent> & { sessionStore: SessionStore }
 ): Promise<SessionAgent<TEvent>>;
 export function Agent<TState extends string = string, TEvent extends MachineEvent = MachineEvent>(
+  args: Omit<Config<TState, TEvent>, "sessionStore"> & { sessionStore?: undefined }
+): Promise<SessionAgent<TEvent>>;
+export function Agent<TState extends string = string, TEvent extends MachineEvent = MachineEvent>(
   args: Config<TState, TEvent>
 ): Agent<TEvent> | Promise<SessionAgent<TEvent>> {
-  if (args.sessionStore) {
-    return createWithSession(args as Config<TState, TEvent> & { sessionStore: SessionStore });
+  if (args.sessionStore === false) {
+    return buildAgent(args);
   }
-  return buildAgent(args);
+  const store =
+    args.sessionStore ?? createFileSessionStore(args.jooAgentRoot ?? defaultJooAgentRoot());
+  return createWithSession({ ...args, sessionStore: store });
 }
 
 /** Alias of {@link Agent}. */

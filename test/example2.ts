@@ -65,7 +65,8 @@ const tools: AgentTool[] = [
   ),
 ];
 
-const { agent } = createAgent({
+/** 示例不写磁盘；默认不传 `sessionStore` 时会持久化到 `~/.joo-agent-core/sessions`。 */
+const { agent } = await createAgent({
   agentOptions: {
     initialState: {
       systemPrompt: [

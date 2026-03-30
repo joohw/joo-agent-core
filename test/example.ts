@@ -105,7 +105,8 @@ let petActorForHooks: MachineHandle | null = null;
 
 const phaseEventBus = createEventBus<AgentPhaseEventBus>();
 
-const { agent, phase: petPhase, send } = createAgent({
+/** 仓库示例不写会话文件；默认不传 `sessionStore` 时会持久化到 `~/.joo-agent-core/sessions`。 */
+const { agent, phase: petPhase, send } = await createAgent({
   eventBus: phaseEventBus,
   agentOptions: {
     initialState: {
