@@ -10,7 +10,7 @@
 
 | 路径 | 说明 |
 |------|------|
-| `src/agent/createAgent.ts` | 将可选阶段机与 `Agent` 绑定：`setTools`、`beforeToolCall`、namespaced tools（`machineId_toolName`，兼容不接受 `.` 的 API） |
+| `src/agent/createAgent.ts` | 将可选阶段机与 `Agent` 绑定：`setTools`、`beforeToolCall`、按状态机合并工具列表（工具名在 base + 多机间须唯一） |
 | `src/agent/index.ts` | 对外统一入口 `Agent(...)`（覆盖/增强 pi-agent），并透出 `createAgent` 与类型 |
 | `src/machine/types.ts` | machine 相关类型（`MachineSpec` / `MachineSpecs`） |
 | `src/machine/machine.ts` | 轻量 FSM：`initial` + `states` + `on`（`event.type` → 下一状态） |

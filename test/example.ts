@@ -15,8 +15,7 @@ import { getModel } from "@mariozechner/pi-ai";
 import { createAgent } from "../src/agent/createAgent.js";
 import { createMachine, type MachineHandle } from "../src/machine/machine.js";
 import { toolsFromMeta } from "../src/machine/metaHelpers.js";
-import { parseNamespacedToolName } from "../src/machine/runtime.js";
-import { formatUsageLine, sumAssistantUsage } from "./sumAssistantUsage.js";
+import { sumSessionTotalTokens } from "./sumAssistantUsage.js";
 
 const hasKimiKey = Boolean(process.env.KIMI_API_KEY?.trim());
 
@@ -134,8 +133,7 @@ const { agent, phase: petPhase, send } = createAgent({
       const a = petActorForHooks;
       if (!a) return undefined;
       const value = a.getSnapshot().value;
-      const parsed = parseNamespacedToolName(ctx.toolCall.name, [PET_MACHINE_ID]);
-      const local = parsed?.localName ?? ctx.toolCall.name;
+      const local = ctx.toolCall.name;
 
       if (local === "wake_up" && value === "sleeping") return { type: "woke" };
       if (local === "feed" && value === "idle") return { type: "fed" };
@@ -160,8 +158,7 @@ agent.subscribe((ev) => {
     return;
   }
   if (ev.type === "agent_end") {
-    const u = sumAssistantUsage(ev.messages);
-    console.error("\n[usage] session:", formatUsageLine(u));
+    console.error("\n[usage]", sumSessionTotalTokens(ev.messages));
     return;
   }
   if (ev.type === "message_update") {

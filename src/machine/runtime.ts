@@ -25,7 +25,7 @@ export interface MachineRuntime {
   /** First configured machine (when multiple exist, prefer `phases.get(id)`). */
   phase?: MachineHandle;
   phases?: ReadonlyMap<string, MachineHandle>;
-  /** Build flat tools: baseTools + machine tools (namespaced). */
+  /** Build flat tools: baseTools + machine tools (local names; must be unique across base + all machines). */
   getTools(): AgentTool[];
   /** Whether a flat tool name is currently allowed. */
   isToolAllowed(toolName: string): boolean;
@@ -37,46 +37,6 @@ export interface MachineRuntime {
   send(event: MachineEvent): void;
   /** Subscribe to machine snapshot changes (used to refresh tools). */
   subscribeToolsChanged(handler: () => void): () => void;
-}
-
-/**
- * Joins machine id and local tool name for the flat tool list.
- * Uses `_` (not `.`) so names stay valid for providers that reject dots in function names (e.g. Kimi).
- * Local tool names may contain underscores (e.g. `read_operator_manual`); {@link parseNamespacedToolName}
- * resolves splits using the configured machine ids (longest match first).
- */
-export const MACHINE_TOOL_NAMESPACE_SEP = "_" as const;
-
-export function namespacedToolName(machineId: string, toolName: string): string {
-  if (!machineId) throw new Error("Machine id must be non-empty.");
-  if (!toolName) throw new Error("Tool name must be non-empty.");
-  return `${machineId}${MACHINE_TOOL_NAMESPACE_SEP}${toolName}`;
-}
-
-/**
- * Split a flat tool name back into machine id + local name. Tries longest machine ids first
- * so ids that share a prefix do not collide.
- */
-export function parseNamespacedToolName(
-  flatName: string,
-  machineIds: readonly string[]
-): { machineId: string; localName: string } | undefined {
-  const sorted = [...machineIds].sort((a, b) => b.length - a.length);
-  for (const id of sorted) {
-    const prefix = `${id}${MACHINE_TOOL_NAMESPACE_SEP}`;
-    if (flatName.startsWith(prefix)) {
-      return { machineId: id, localName: flatName.slice(prefix.length) };
-    }
-  }
-  return undefined;
-}
-
-function wrapTool(machineId: string, tool: AgentTool): AgentTool {
-  return {
-    ...tool,
-    name: namespacedToolName(machineId, tool.name),
-    label: `${machineId} · ${tool.label}`,
-  };
 }
 
 function normalizeMachineSpecs<TState extends string>(
@@ -142,18 +102,19 @@ export function createMachineRuntime<TState extends string>(args: {
       }
 
       for (const localTool of locals) {
-        const wrapped = wrapTool(machineId, localTool);
-        if (registry.has(wrapped.name)) {
-          throw new Error(`Duplicate tool name "${wrapped.name}" in flat tool registry.`);
+        if (registry.has(localTool.name)) {
+          throw new Error(
+            `Duplicate tool name "${localTool.name}" — names must be unique across base tools and all machines.`
+          );
         }
-        registry.set(wrapped.name, {
+        registry.set(localTool.name, {
           kind: "machine",
           machineId,
           localName: localTool.name,
-          tool: wrapped,
+          tool: localTool,
           execute: async (toolCallId, params, signal) => {
             const t = localByName.get(localTool.name);
-            if (!t) throw new Error(`Tool "${wrapped.name}" not found in machine "${machineId}".`);
+            if (!t) throw new Error(`Tool "${localTool.name}" not found in machine "${machineId}".`);
             return await t.execute(toolCallId, params as never, signal);
           },
         });

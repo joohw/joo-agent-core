@@ -16,7 +16,7 @@ import type { AgentTool } from "../src/pi-agent/types.js";
 import type { AssistantMessage } from "@mariozechner/pi-ai";
 import { getModel } from "@mariozechner/pi-ai";
 import { createAgent } from "../src/agent/createAgent.js";
-import { formatUsageLine, sumAssistantUsage } from "./sumAssistantUsage.js";
+import { sumSessionTotalTokens } from "./sumAssistantUsage.js";
 
 const hasKimiKey = Boolean(process.env.KIMI_API_KEY?.trim());
 
@@ -95,8 +95,7 @@ agent.subscribe((ev) => {
     return;
   }
   if (ev.type === "agent_end") {
-    const u = sumAssistantUsage(ev.messages);
-    console.error("\n[usage] session:", formatUsageLine(u));
+    console.error("\n[usage]", sumSessionTotalTokens(ev.messages));
     return;
   }
   if (ev.type === "message_update") {
@@ -171,7 +170,7 @@ try {
     "宠物现在在睡觉。请按照照顾流程照顾它：先叫醒，再喂食，然后带它出门散步，散步结束后哄它睡觉。每一步用对应工具完成，并简单告诉我发生了什么。"
   );
   if (agent.state.error) console.error("\n[example2] agent.state.error:", agent.state.error);
-  console.error("\n[example2] prompt finished (no runtime phase — 无 final machine state 可打印)");
+  console.error("\n[example2] prompt finished");
 } catch (err) {
   console.error("\n[example2] prompt failed:", err);
   process.exitCode = 1;
