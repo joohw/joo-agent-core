@@ -21,3 +21,4 @@ export {
   Agent,
   createAgent,
 } from "./agent/index.js";
+export { SKILL_MACHINE_ID, skillMachine, type SkillMachineState } from "./built-in-skills/index.js";

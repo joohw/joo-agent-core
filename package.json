@@ -21,6 +21,10 @@
     "./event": {
       "types": "./dist/event/index.d.ts",
       "import": "./dist/event/index.js"
+    },
+    "./built-in-skills": {
+      "types": "./dist/built-in-skills/index.d.ts",
+      "import": "./dist/built-in-skills/index.js"
     }
   },
   "files": [
