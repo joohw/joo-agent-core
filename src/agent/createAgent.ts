@@ -1,5 +1,5 @@
 import {
-  Agent,
+  Agent as Core,
   type AgentContext,
   type AgentEvent,
   type AgentOptions,
@@ -15,78 +15,37 @@ import type {
 import { validateToolArguments } from "@mariozechner/pi-ai";
 import type { AssistantMessage, ToolCall } from "@mariozechner/pi-ai";
 import { randomUUID } from "node:crypto";
-import {
-  type ActorOptions,
-  type AnyStateMachine,
-  type EventFromLogic,
-  type SnapshotFrom,
-} from "xstate";
-import type { Actor } from "xstate";
 import { compact } from "../compact/index.js";
 import { createMachineRuntime, type MachineRuntime } from "../machine/runtime.js";
+import type { MachineEvent, MachineHandle, MachineSnapshot } from "../machine/machine.js";
 import type { MachineSpec, MachineSpecs } from "../machine/types.js";
 import type { AgentSessionData, SessionStore } from "../session/sessionStore.js";
 
 /**
- * Integrates `pi-agent` with an XState machine so `agent.setTools` follows the chart.
- *
- * **Visualization** (pick one):
- * - [Stately Studio](https://stately.ai/registry) — import the machine, edit and simulate visually
- * - VS Code extension **"Stately"** — diagram + inspect from your repo
- * - `import { toDirectedGraph } from "xstate/graph"` — build a graph structure for custom UIs
- *
- * Machine-driven tool gating is handled internally; subscribe to {@link AgentEvent} via {@link Agent.subscribe}.
+ * Hooks for mapping tool calls to phase events (see {@link AgentConfig.hooks}).
  */
-
-export interface CreateAgentWithXStateMachineHooks<TMachine extends AnyStateMachine> {
-  /**
-   * Map an about-to-run tool call to an XState event (e.g. `{ type: "gather_start" }`).
-   * Only sent if `snapshot.can(event)` is true.
-   *
-   * This is useful for "real-time" UI state updates while a long-running tool is executing.
-   */
-  deriveEventFromToolStart?: (ctx: BeforeToolCallContext) => EventFromLogic<TMachine> | undefined;
-  /**
-   * Map a finished tool call to an XState event (e.g. `{ type: "gather_done" }`).
-   * Only sent if `snapshot.can(event)` is true.
-   */
-  deriveEventFromTool?: (ctx: AfterToolCallContext) => EventFromLogic<TMachine> | undefined;
+export interface Hooks<TEvent extends MachineEvent = MachineEvent> {
+  deriveEventFromToolStart?: (ctx: BeforeToolCallContext) => TEvent | undefined;
+  deriveEventFromTool?: (ctx: AfterToolCallContext) => TEvent | undefined;
 }
 
-export interface CreateAgentWithXStateMachineArgs<TMachine extends AnyStateMachine> {
+/**
+ * Options for {@link Agent} / {@link createAgent}.
+ */
+export interface AgentConfig<TState extends string = string, TEvent extends MachineEvent = MachineEvent> {
   agentOptions: AgentOptions;
-  /**
-   * Optional machine(s). When provided, all machines are started concurrently.
-   *
-   * - Prefer `machine` for a single machine.
-   * - Pass an array for multiple machines.
-   */
-  machine?: MachineSpec<TMachine> | MachineSpecs<TMachine>;
-  /** Which tools the model may call in this snapshot — often {@link toolsFromMeta}. */
-  resolveTools: (snapshot: SnapshotFrom<TMachine>, machineId?: string) => AgentTool[];
-  /** Passed to {@link createActor} (e.g. `input` for machines that require it). */
-  actorOptions?: ActorOptions<TMachine>;
-  hooks?: CreateAgentWithXStateMachineHooks<TMachine>;
-  /**
-   * Optional persistence: load/save `messages` (+ optional `systemPrompt`) via {@link SessionStore}.
-   * When set, {@link createAgent} returns a `Promise` (see overloads).
-   */
+  machine?: MachineSpec<TState> | MachineSpecs<TState>;
+  resolveTools: (snapshot: MachineSnapshot, machineId?: string) => AgentTool[];
+  hooks?: Hooks<TEvent>;
   sessionStore?: SessionStore;
-  /** Omit to start a new session id; provide to resume or overwrite that id. */
   sessionId?: string;
-  /** Default: true when `sessionStore` is set. */
   persistSystemPrompt?: boolean;
-  /**
-   * When restoring from store, prefer stored `systemPrompt` over `agentOptions.initialState.systemPrompt`.
-   * Default: false.
-   */
   restoreSystemPrompt?: boolean;
-  /** Default: `["message_end","tool_execution_end"]` when `sessionStore` is set. */
   autoSaveOn?: Array<"message_end" | "tool_execution_end">;
 }
 
-/** Result of {@link AgentWithXStateMachine.runManualTool} (UI / WebSocket 手动调工具). */
-export type ManualToolRunResult =
+/** Result of {@link Agent.runManualTool}. */
+export type ManualToolResult =
   | {
       ok: true;
       toolName: string;
@@ -96,67 +55,59 @@ export type ManualToolRunResult =
     }
   | { ok: false; error: string; blocked?: boolean };
 
-export interface AgentWithXStateMachine<TMachine extends AnyStateMachine> {
-  readonly agent: Agent;
-  /** Present when machine(s) are configured. */
-  readonly actor?: Actor<TMachine>;
-  /** Present when machine(s) are configured. */
-  readonly actors?: ReadonlyMap<string, Actor<TMachine>>;
-  /** Machine runtime (tool gating, routing, event broadcast). */
-  readonly machineRuntime: MachineRuntime<TMachine>;
-  /** Send an event; tool list updates via subscription when the transition applies. */
-  send(event: EventFromLogic<TMachine>): void;
-  /**
-   * 与模型调工具同一路径：`beforeToolCall`（含状态内工具白名单）、`execute`、`afterToolCall`（含 `deriveEventFromTool`）。
-   * `params` 为 JSON 对象，需符合该工具 TypeBox schema。
-   */
+/**
+ * Created agent: LLM {@link agent} plus optional phase machine handles and {@link runtime}.
+ */
+export interface Agent<TEvent extends MachineEvent = MachineEvent> {
+  /** pi-agent instance (prompt, subscribe, state, …). */
+  readonly agent: Core;
+  readonly phase?: MachineHandle;
+  readonly phases?: ReadonlyMap<string, MachineHandle>;
+  readonly runtime: MachineRuntime;
+  send(event: TEvent): void;
   runManualTool(args: {
     name: string;
     params: unknown;
     signal?: AbortSignal;
-  }): Promise<ManualToolRunResult>;
+  }): Promise<ManualToolResult>;
 }
 
-/** When {@link CreateAgentWithXStateMachineArgs.sessionStore} is set, {@link createAgent} resolves to this. */
-export interface AgentWithSession<TMachine extends AnyStateMachine> extends AgentWithXStateMachine<TMachine> {
+/** When `sessionStore` is set on {@link AgentConfig}, {@link Agent} resolves to this. */
+export interface SessionAgent<TEvent extends MachineEvent = MachineEvent> extends Agent<TEvent> {
   readonly sessionId: string;
   readonly sessionStore: SessionStore;
   loadSession(sessionId: string): Promise<AgentSessionData | null>;
   saveSession(): Promise<void>;
 }
 
-function stateValueKey(value: unknown): string {
-  return typeof value === "string" ? value : JSON.stringify(value);
-}
+type Config<TState extends string, TEvent extends MachineEvent> = AgentConfig<TState, TEvent>;
 
-type CreateAgentArgs<TMachine extends AnyStateMachine> = CreateAgentWithXStateMachineArgs<TMachine>;
-
-export function createAgent<TMachine extends AnyStateMachine>(
-  args: CreateAgentArgs<TMachine> & { sessionStore?: undefined }
-): AgentWithXStateMachine<TMachine>;
-export function createAgent<TMachine extends AnyStateMachine>(
-  args: CreateAgentArgs<TMachine> & { sessionStore: SessionStore }
-): Promise<AgentWithSession<TMachine>>;
-export function createAgent<TMachine extends AnyStateMachine>(
-  args: CreateAgentArgs<TMachine>
-): AgentWithXStateMachine<TMachine> | Promise<AgentWithSession<TMachine>> {
+export function Agent<TState extends string = string, TEvent extends MachineEvent = MachineEvent>(
+  args: Config<TState, TEvent> & { sessionStore?: undefined }
+): Agent<TEvent>;
+export function Agent<TState extends string = string, TEvent extends MachineEvent = MachineEvent>(
+  args: Config<TState, TEvent> & { sessionStore: SessionStore }
+): Promise<SessionAgent<TEvent>>;
+export function Agent<TState extends string = string, TEvent extends MachineEvent = MachineEvent>(
+  args: Config<TState, TEvent>
+): Agent<TEvent> | Promise<SessionAgent<TEvent>> {
   if (args.sessionStore) {
-    return createAgentWithStore(args as CreateAgentArgs<TMachine> & { sessionStore: SessionStore });
+    return createWithSession(args as Config<TState, TEvent> & { sessionStore: SessionStore });
   }
-  return createAgentSync(args);
+  return buildAgent(args);
 }
 
-function createAgentSync<TMachine extends AnyStateMachine>(
-  args: CreateAgentArgs<TMachine>
-): AgentWithXStateMachine<TMachine> {
-  const { agentOptions, resolveTools, actorOptions, hooks } = args;
+/** Alias of {@link Agent}. */
+export const createAgent = Agent;
+
+function buildAgent<TState extends string, TEvent extends MachineEvent>(args: Config<TState, TEvent>): Agent<TEvent> {
+  const { agentOptions, resolveTools, hooks } = args;
   const baseTools: AgentTool[] = Array.isArray(agentOptions.initialState?.tools)
     ? (agentOptions.initialState?.tools as AgentTool[])
     : [];
-  const machineRuntime = createMachineRuntime<TMachine>({
-    machine: args.machine as MachineSpec<TMachine> | MachineSpecs<TMachine> | undefined,
-    actorOptions,
-    resolveTools: (snapshot, machineId) => resolveTools(snapshot as SnapshotFrom<TMachine>, machineId),
+  const runtime = createMachineRuntime<TState>({
+    machine: args.machine,
+    resolveTools: (snapshot, machineId) => resolveTools(snapshot as MachineSnapshot, machineId),
     baseTools,
   });
 
@@ -166,16 +117,16 @@ function createAgentSync<TMachine extends AnyStateMachine>(
   ): Promise<BeforeToolCallResult | undefined> => {
     const user = await agentOptions.beforeToolCall?.(ctx, signal);
     if (user?.block) return user;
-    if (!machineRuntime.isToolAllowed(ctx.toolCall.name)) {
+    if (!runtime.isToolAllowed(ctx.toolCall.name)) {
       return {
         block: true,
-        reason: `Tool "${ctx.toolCall.name}" is not available in current machines (${machineRuntime.formatStates()}).`,
+        reason: `Tool "${ctx.toolCall.name}" is not available in current machines (${runtime.formatStates()}).`,
       };
     }
 
     const startEv = hooks?.deriveEventFromToolStart?.(ctx);
     if (startEv !== undefined) {
-      machineRuntime.send(startEv);
+      runtime.send(startEv);
     }
     return undefined;
   };
@@ -189,7 +140,7 @@ function createAgentSync<TMachine extends AnyStateMachine>(
 
     const ev = hooks?.deriveEventFromTool?.(ctx);
     if (ev !== undefined) {
-      machineRuntime.send(ev);
+      runtime.send(ev);
     }
     return userResult;
   };
@@ -210,15 +161,19 @@ function createAgentSync<TMachine extends AnyStateMachine>(
     }
   };
 
-  const agent = new Agent({
+  const llm = new Core({
     ...agentOptions,
     initialState: {
       ...agentOptions.initialState,
-      tools: machineRuntime.getTools(),
+      tools: runtime.getTools(),
     },
     beforeToolCall: guardBefore,
     afterToolCall: mergedAfter,
     transformContext: mergedTransformContext,
+  });
+
+  runtime.subscribeToolsChanged(() => {
+    llm.setTools(runtime.getTools());
   });
 
   function makeManualAssistantMessage(tc: ToolCall): AssistantMessage {
@@ -245,9 +200,9 @@ function createAgentSync<TMachine extends AnyStateMachine>(
     name: string;
     params: unknown;
     signal?: AbortSignal;
-  }): Promise<ManualToolRunResult> {
+  }): Promise<ManualToolResult> {
     const { name, params, signal } = args;
-    const entry = machineRuntime.getToolEntry(name);
+    const entry = runtime.getToolEntry(name);
     if (!entry) {
       return { ok: false, error: `Tool "${name}" is not available in the current state.` };
     }
@@ -276,9 +231,9 @@ function createAgentSync<TMachine extends AnyStateMachine>(
     }
 
     const context: AgentContext = {
-      systemPrompt: agent.state.systemPrompt,
-      messages: agent.state.messages,
-      tools: agent.state.tools,
+      systemPrompt: llm.state.systemPrompt,
+      messages: llm.state.messages,
+      tools: llm.state.tools,
     };
 
     const beforeResult = await guardBefore(
@@ -343,20 +298,20 @@ function createAgentSync<TMachine extends AnyStateMachine>(
   }
 
   return {
-    agent,
-    ...(machineRuntime.actor ? { actor: machineRuntime.actor } : {}),
-    ...(machineRuntime.actors ? { actors: machineRuntime.actors } : {}),
-    machineRuntime,
+    agent: llm,
+    ...(runtime.phase ? { phase: runtime.phase } : {}),
+    ...(runtime.phases ? { phases: runtime.phases } : {}),
+    runtime,
     runManualTool,
-    send(event: EventFromLogic<TMachine>) {
-      machineRuntime.send(event);
+    send(event: TEvent) {
+      runtime.send(event);
     },
   };
 }
 
-async function createAgentWithStore<TMachine extends AnyStateMachine>(
-  args: CreateAgentArgs<TMachine> & { sessionStore: SessionStore }
-): Promise<AgentWithSession<TMachine>> {
+async function createWithSession<TState extends string, TEvent extends MachineEvent>(
+  args: Config<TState, TEvent> & { sessionStore: SessionStore }
+): Promise<SessionAgent<TEvent>> {
   const store = args.sessionStore;
   const sessionId = args.sessionId ?? randomUUID();
   const persistSystemPrompt = args.persistSystemPrompt ?? true;
@@ -374,7 +329,7 @@ async function createAgentWithStore<TMachine extends AnyStateMachine>(
   const restoredMessages = restored?.messages;
   const restoredSystemPrompt = restored?.systemPrompt;
 
-  const core = createAgentSync({
+  const core = buildAgent({
     ...args,
     agentOptions: {
       ...args.agentOptions,

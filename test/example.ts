@@ -1,5 +1,5 @@
 /**
- * Demo: XState chart with `meta.tools` per phase + pi-agent `Agent`.
+ * Demo: phase machine with `meta.tools` per phase + pi-agent `Agent`.
  * Run: npx tsx test/example.ts  （或 npm run example）
  * Requires provider API keys (see @mariozechner/pi-ai).
  * Loads `.env` from repo root when present (see dotenv).
@@ -12,9 +12,10 @@ import { Type } from "@sinclair/typebox";
 import type { AgentTool } from "../src/pi-agent/types.js";
 import type { AssistantMessage } from "@mariozechner/pi-ai";
 import { getModel } from "@mariozechner/pi-ai";
-import { createActor, setup, type Actor } from "xstate";
 import { createAgent } from "../src/agent/createAgent.js";
-import { toolsFromMeta } from "../src/machine/xstateHelpers.js";
+import { createMachine, type MachineHandle } from "../src/machine/machine.js";
+import { toolsFromMeta } from "../src/machine/metaHelpers.js";
+import { parseNamespacedToolName } from "../src/machine/runtime.js";
 
 const hasKimiKey = Boolean(process.env.KIMI_API_KEY?.trim());
 
@@ -52,7 +53,7 @@ const readOperatorManualTool: AgentTool = {
 
 const toolsReadManual: AgentTool[] = [readOperatorManualTool];
 
-/** Advances the XState chart; transitions are derived in `deriveEventFromTool` from the current snapshot (not from free text). */
+/** Advances the phase chart; transitions are derived in `deriveEventFromTool` from the current snapshot (not from free text). */
 const markPhaseDoneTool: AgentTool = {
   name: "mark_phase_done",
   label: "Mark phase done",
@@ -82,20 +83,8 @@ const toolsReview: AgentTool[] = [
   markPhaseDoneTool,
 ];
 
-const toolWorkflow = setup({
-  types: {
-    context: {} as Record<string, never>,
-    events: {} as
-      | { type: "manual_done" }
-      | { type: "gather_done" }
-      | { type: "act_done" }
-      | { type: "review_done" },
-    meta: {} as { tools: AgentTool[] },
-  },
-}).createMachine({
-  id: "toolWorkflow",
-  context: {},
-  initial: "readManual",
+const toolWorkflow = {
+  initial: "readManual" as const,
   states: {
     readManual: {
       meta: { tools: toolsReadManual },
@@ -114,10 +103,10 @@ const toolWorkflow = setup({
       on: { review_done: "gather" },
     },
   },
-});
+};
 
 /** Set immediately after `createAgent` so `deriveEventFromTool` can read the current state. */
-let actorForPhaseHooks: Actor<typeof toolWorkflow> | null = null;
+let actorForPhaseHooks: MachineHandle | null = null;
 
 const { agent, actor, send } = createAgent({
   agentOptions: {
@@ -146,7 +135,8 @@ const { agent, actor, send } = createAgent({
       const a = actorForPhaseHooks;
       if (!a) return undefined;
       const value = a.getSnapshot().value;
-      const localToolName = ctx.toolCall.name.split(".").slice(1).join(".");
+      const parsed = parseNamespacedToolName(ctx.toolCall.name, ["workflow"]);
+      const localToolName = parsed?.localName ?? ctx.toolCall.name;
       if (localToolName === "read_operator_manual" && value === "readManual") {
         return { type: "manual_done" };
       }
@@ -229,8 +219,7 @@ agent.subscribe((ev) => {
 });
 
 if (!hasKimiKey) {
-  const dry = createActor(toolWorkflow);
-  dry.start();
+  const dry = createMachine(toolWorkflow);
   const snap = dry.getSnapshot();
   console.error(
     "Set KIMI_API_KEY in .env (Kimi For Coding) to run a live prompt. Initial state:",
@@ -243,10 +232,10 @@ if (!hasKimiKey) {
 
 try {
   console.error("[example] kimi-coding / k2p5");
-  if (actor) console.error("[xstate] initial", JSON.stringify(actor.getSnapshot().value));
+  if (actor) console.error("[phase] initial", JSON.stringify(actor.getSnapshot().value));
   await agent.prompt("I want to plan a small CLI tool, then build it, then review.");
   if (agent.state.error) console.error("\n[example] agent.state.error:", agent.state.error);
-  if (actor) console.error("\n[xstate] final", JSON.stringify(actor.getSnapshot().value));
+  if (actor) console.error("\n[phase] final", JSON.stringify(actor.getSnapshot().value));
   console.error("\n[example] prompt finished");
 } catch (err) {
   console.error("\n[example] prompt failed:", err);

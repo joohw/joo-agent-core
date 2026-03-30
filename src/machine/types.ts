@@ -1,19 +1,15 @@
-import type { AnyStateMachine } from "xstate";
+import type { MachineDefinition } from "./machine.js";
 
 /**
  * A named machine instance that can contribute tools and receive events.
  *
  * - `id` must be unique among all machines passed to an agent (e.g. "web", "robot").
- * - Machine-local tools (e.g. "fetch_url") are namespaced to `${id}.${toolName}` in the flat tool list.
+ * - Machine-local tools (e.g. "fetch_url") are namespaced in the flat list as `id__toolName` (see `namespacedToolName` in `runtime.ts`).
  */
-export type MachineSpec<TMachine extends AnyStateMachine = AnyStateMachine> = {
+export type MachineSpec<TState extends string = string> = {
   id: string;
-  machine: TMachine;
+  machine: MachineDefinition<TState>;
 };
 
 /** Non-empty list of machines. */
-export type MachineSpecs<TMachine extends AnyStateMachine = AnyStateMachine> = readonly [
-  MachineSpec<TMachine>,
-  ...MachineSpec<TMachine>[],
-];
-
+export type MachineSpecs<TState extends string = string> = readonly [MachineSpec<TState>, ...MachineSpec<TState>[]];

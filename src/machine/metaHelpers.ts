@@ -1,13 +1,13 @@
 import type { AgentTool } from "../pi-agent/types.js";
 
-/** Meta shape attached to state nodes that expose tools to the LLM */
+/** Meta shape attached to a phase state that exposes tools to the LLM */
 export interface ToolPhaseMeta {
   tools: AgentTool[];
 }
 
 /**
- * Reads `tools` from the active state node's `meta` (via {@link MachineSnapshot.getMeta}).
- * When multiple regions have meta, returns the first non-empty `tools` array.
+ * Reads `tools` from the active state's `meta` (via {@link MachineSnapshot.getMeta}).
+ * When multiple regions exist, returns the first non-empty `tools` array.
  */
 export function toolsFromMeta(snapshot: { getMeta(): Record<string, unknown> }): AgentTool[] {
   const meta = snapshot.getMeta();

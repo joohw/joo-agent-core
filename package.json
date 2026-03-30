@@ -1,7 +1,7 @@
 {
   "name": "joo-agent-core",
   "version": "1.0.0",
-  "description": "pi-agent-core with XState for phase-based dynamic tools",
+  "description": "pi-agent-core with a lightweight phase FSM for dynamic tools",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "type": "module",
@@ -40,8 +40,7 @@
   "dependencies": {
     "@mariozechner/pi-ai": "^0.61.1",
     "@sinclair/typebox": "^0.34.48",
-    "dotenv": "^17.3.1",
-    "xstate": "^5.28.0"
+    "dotenv": "^17.3.1"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",

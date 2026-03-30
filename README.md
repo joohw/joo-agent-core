@@ -1,11 +1,11 @@
 # joo-agent-core
 
-基于 [@mariozechner/pi-agent-core](https://www.npmjs.com/package/@mariozechner/pi-agent-core)，用 [XState](https://stately.ai/docs) 把 **对话阶段** 建成状态机：**每个状态只暴露当前允许的 `AgentTool`**，非法调用在 `beforeToolCall` 里拦截。
+基于 [@mariozechner/pi-agent-core](https://www.npmjs.com/package/@mariozechner/pi-agent-core)，用内置的 **轻量阶段状态机**（`MachineDefinition` + `createMachine`）把 **对话阶段** 建成 FSM：**每个状态只暴露当前允许的 `AgentTool`**，非法调用在 `beforeToolCall` 里拦截。
 
 ## 适合做什么
 
 - 多阶段任务（收集信息 → 执行 → 收尾），希望 **工具集随阶段变化**，而不是一次性塞给模型一长串工具。
-- 需要在 **工具执行后** 用 `deriveEventFromTool` 把结果映射成 XState 事件，驱动状态迁移。
+- 需要在 **工具执行后** 用 `deriveEventFromTool` 把结果映射成 `{ type: string }` 事件，驱动状态迁移。
 
 ## 要求
 
@@ -22,9 +22,9 @@ npm install joo-agent-core
 ## 工作原理（简要）
 
 1. 在状态 `meta` 里声明各阶段工具（或用自定义 `resolveTools`）。
-2. `createAgent` 创建 `Agent`（可选 machine：传入时会启动 XState actor）；快照变化时 **`setTools`**，与图上可用工具一致。
+2. `createAgent` 创建 `Agent`（可选 `machine`：传入时会创建阶段机实例）；快照变化时 **`setTools`**，与当前阶段可用工具一致。
 3. 模型只能调用当前快照允许的工具；否则 `beforeToolCall` 返回 block。
-4. 可选：`afterToolCall` 链上根据工具结果 `deriveEventFromTool` → `send(event)`（仅当对应 machine `snapshot.can(event)`）。
+4. 可选：`afterToolCall` 链上根据工具结果 `deriveEventFromTool` → `send(event)`（仅当对应机在当前状态下能消费该事件，即 `can(event)`）。
 
 ## 用法示例
 
@@ -36,11 +36,11 @@ const { agent, send } = createAgent({
     initialState: { model, systemPrompt: "...", tools: [] },
   },
   // 可选：不传 machine 时等价于“仅基础 tools”的 agent
-  machine: { id: "workflow", machine: yourMachine },
+  machine: { id: "workflow", machine: yourPhaseDefinition },
   resolveTools: (snapshot) => toolsFromMeta(snapshot),
   hooks: {
     deriveEventFromTool: (ctx) => {
-      /* 返回 XState 事件，或 undefined */
+      /* 返回 { type: "..." } 事件，或 undefined */
     },
   },
 });
@@ -87,7 +87,7 @@ const { agent } = createAgent({
 | ------------------------ | -------------------------------------------------------------------- |
 | `joo-agent-core`         | 主入口，聚合导出                                                             |
 | `joo-agent-core/agent`   | `Agent`、`createAgent`、相关类型 |
-| `joo-agent-core/machine` | `toolsFromMeta`、`ToolPhaseMeta`、`MachineSpec` / `MachineSpecs`                                      |
+| `joo-agent-core/machine` | `toolsFromMeta`、`createMachine`、`MachineDefinition`、`MachineSpec` / `MachineSpecs` |
 | `joo-agent-core/event`   | `createEventBus`                                                     |
 
 

@@ -4,7 +4,7 @@ import type { AgentMessage } from "../pi-agent/types.js";
  * Minimal persisted session payload.
  *
  * Note: We persist only agent conversation state (systemPrompt + messages).
- * XState machine state is intentionally not persisted here because restoring it
+ * Phase machine state is intentionally not persisted here because restoring it
  * requires machine-specific snapshot wiring. If you need that, store it in your
  * own implementation alongside this payload.
  */

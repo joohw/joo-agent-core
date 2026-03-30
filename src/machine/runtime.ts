@@ -1,6 +1,10 @@
 import type { AgentTool, AgentToolResult } from "../pi-agent/types.js";
-import { createActor, type ActorOptions, type AnyStateMachine, type EventFromLogic } from "xstate";
-import type { Actor } from "xstate";
+import {
+  createMachine,
+  type MachineDefinition,
+  type MachineEvent,
+  type MachineHandle,
+} from "./machine.js";
 import type { MachineSpec, MachineSpecs } from "./types.js";
 
 type ToolRegistryEntry =
@@ -13,13 +17,14 @@ type ToolRegistryEntry =
       kind: "machine";
       machineId: string;
       localName: string;
-      tool: AgentTool; // wrapped (namespaced) tool used for validation/metadata
+      tool: AgentTool;
       execute: (toolCallId: string, params: unknown, signal?: AbortSignal) => Promise<AgentToolResult<unknown>>;
     };
 
-export interface MachineRuntime<TMachine extends AnyStateMachine> {
-  actor?: Actor<TMachine>;
-  actors?: ReadonlyMap<string, Actor<TMachine>>;
+export interface MachineRuntime {
+  /** First configured machine (when multiple exist, prefer `phases.get(id)`). */
+  phase?: MachineHandle;
+  phases?: ReadonlyMap<string, MachineHandle>;
   /** Build flat tools: baseTools + machine tools (namespaced). */
   getTools(): AgentTool[];
   /** Whether a flat tool name is currently allowed. */
@@ -28,60 +33,91 @@ export interface MachineRuntime<TMachine extends AnyStateMachine> {
   formatStates(): string;
   /** Lookup a tool entry (for validation/execution). */
   getToolEntry(toolName: string): ToolRegistryEntry | undefined;
-  /** Send an event to any machine that can accept it. */
-  send(event: EventFromLogic<TMachine>): void;
+  /** Send an event to any machine that accepts it (`can` is true). */
+  send(event: MachineEvent): void;
   /** Subscribe to machine snapshot changes (used to refresh tools). */
   subscribeToolsChanged(handler: () => void): () => void;
 }
 
-function namespacedToolName(machineId: string, toolName: string): string {
-  return `${machineId}.${toolName}`;
+/**
+ * Joins machine id and local tool name for the flat tool list.
+ * Uses `__` (not `.`) so names stay valid for providers that reject dots in function names (e.g. Kimi).
+ * Machine id and local tool name must not contain this substring.
+ */
+export const MACHINE_TOOL_NAMESPACE_SEP = "__" as const;
+
+function assertValidMachineToolSegment(s: string, label: string): void {
+  if (s.includes(MACHINE_TOOL_NAMESPACE_SEP)) {
+    throw new Error(`${label} must not contain "${MACHINE_TOOL_NAMESPACE_SEP}": ${JSON.stringify(s)}`);
+  }
+}
+
+export function namespacedToolName(machineId: string, toolName: string): string {
+  assertValidMachineToolSegment(machineId, "Machine id");
+  assertValidMachineToolSegment(toolName, "Tool name");
+  return `${machineId}${MACHINE_TOOL_NAMESPACE_SEP}${toolName}`;
+}
+
+/**
+ * Split a flat tool name back into machine id + local name. Tries longest machine ids first
+ * so ids that share a prefix do not collide.
+ */
+export function parseNamespacedToolName(
+  flatName: string,
+  machineIds: readonly string[]
+): { machineId: string; localName: string } | undefined {
+  const sorted = [...machineIds].sort((a, b) => b.length - a.length);
+  for (const id of sorted) {
+    const prefix = `${id}${MACHINE_TOOL_NAMESPACE_SEP}`;
+    if (flatName.startsWith(prefix)) {
+      return { machineId: id, localName: flatName.slice(prefix.length) };
+    }
+  }
+  return undefined;
 }
 
 function wrapTool(machineId: string, tool: AgentTool): AgentTool {
   return {
     ...tool,
     name: namespacedToolName(machineId, tool.name),
-    label: `${machineId}.${tool.label}`,
+    label: `${machineId} · ${tool.label}`,
   };
 }
 
-function normalizeMachineSpecs<TMachine extends AnyStateMachine>(
-  machine?: MachineSpec<TMachine> | MachineSpecs<TMachine>
-): MachineSpec<TMachine>[] {
+function normalizeMachineSpecs<TState extends string>(
+  machine?: MachineSpec<TState> | MachineSpecs<TState>
+): MachineSpec<TState>[] {
   if (!machine) return [];
-  return Array.isArray(machine) ? [...(machine as MachineSpecs<TMachine>)] : [machine as MachineSpec<TMachine>];
+  return Array.isArray(machine) ? [...(machine as MachineSpecs<TState>)] : [machine as MachineSpec<TState>];
 }
 
 function stateValueKey(value: unknown): string {
   return typeof value === "string" ? value : JSON.stringify(value);
 }
 
-export function createMachineRuntime<TMachine extends AnyStateMachine>(args: {
-  machine?: MachineSpec<TMachine> | MachineSpecs<TMachine>;
-  actorOptions?: ActorOptions<TMachine>;
+export function createMachineRuntime<TState extends string>(args: {
+  machine?: MachineSpec<TState> | MachineSpecs<TState>;
   resolveTools: (snapshot: unknown, machineId?: string) => AgentTool[];
   baseTools?: AgentTool[];
-}): MachineRuntime<TMachine> {
+}): MachineRuntime {
   const baseTools = Array.isArray(args.baseTools) ? args.baseTools : [];
   const machineSpecs = normalizeMachineSpecs(args.machine);
 
-  const actors = new Map<string, Actor<TMachine>>();
+  const phases = new Map<string, MachineHandle>();
   const machineIds: string[] = [];
 
   for (const m of machineSpecs) {
     if (!m?.id || typeof m.id !== "string") throw new Error("Each machine requires a string id.");
-    if (actors.has(m.id)) throw new Error(`Duplicate machine id "${m.id}".`);
-    const a = createActor(m.machine, args.actorOptions);
-    a.start();
-    actors.set(m.id, a);
+    if (phases.has(m.id)) throw new Error(`Duplicate machine id "${m.id}".`);
+    const handle = createMachine(m.machine as MachineDefinition<TState>);
+    phases.set(m.id, handle);
     machineIds.push(m.id);
   }
 
-  const actor = machineIds.length > 0 ? (actors.get(machineIds[0]) as Actor<TMachine>) : undefined;
+  const phase = machineIds.length > 0 ? (phases.get(machineIds[0]) as MachineHandle) : undefined;
 
   function getToolsByMachineId(machineId: string): AgentTool[] {
-    const a = actors.get(machineId);
+    const a = phases.get(machineId);
     if (!a) return [];
     return args.resolveTools(a.getSnapshot(), machineId);
   }
@@ -144,9 +180,9 @@ export function createMachineRuntime<TMachine extends AnyStateMachine>(args: {
     if (machineIds.length === 0) return "no machines";
     return machineIds
       .map((id) => {
-        const a = actors.get(id);
+        const a = phases.get(id);
         if (!a) return undefined;
-        return `${id}:${stateValueKey((a.getSnapshot() as any).value)}`;
+        return `${id}:${stateValueKey(a.getSnapshot().value)}`;
       })
       .filter((v): v is string => v !== undefined)
       .join(", ");
@@ -156,12 +192,11 @@ export function createMachineRuntime<TMachine extends AnyStateMachine>(args: {
     return buildRegistry().get(toolName);
   }
 
-  function send(event: EventFromLogic<TMachine>): void {
-    if (actors.size === 0) return;
-    for (const a of actors.values()) {
-      const snap: any = a.getSnapshot();
-      if (typeof snap?.can === "function" && snap.can(event)) {
-        a.send(event as any);
+  function send(event: MachineEvent): void {
+    if (phases.size === 0) return;
+    for (const a of phases.values()) {
+      if (a.can(event)) {
+        a.send(event);
       }
     }
   }
@@ -169,7 +204,7 @@ export function createMachineRuntime<TMachine extends AnyStateMachine>(args: {
   function subscribeToolsChanged(handler: () => void): () => void {
     const unsubs: Array<() => void> = [];
     for (const id of machineIds) {
-      const a = actors.get(id);
+      const a = phases.get(id);
       if (!a) continue;
       const sub = a.subscribe(() => handler());
       unsubs.push(() => sub.unsubscribe());
@@ -180,8 +215,8 @@ export function createMachineRuntime<TMachine extends AnyStateMachine>(args: {
   }
 
   return {
-    actor,
-    ...(actors.size > 0 ? { actors } : {}),
+    phase,
+    ...(phases.size > 0 ? { phases } : {}),
     getTools,
     isToolAllowed,
     formatStates,
@@ -190,4 +225,3 @@ export function createMachineRuntime<TMachine extends AnyStateMachine>(args: {
     subscribeToolsChanged,
   };
 }
-
