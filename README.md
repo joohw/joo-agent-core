@@ -36,7 +36,7 @@ const { agent, send } = createAgent({
     initialState: { model, systemPrompt: "...", tools: [] },
   },
   // 可选：不传 machine 时等价于“仅基础 tools”的 agent
-  machine: { id: "workflow", machine: yourPhaseDefinition },
+  machine: { id: "pet", machine: yourPetMachineDefinition },
   resolveTools: (snapshot) => toolsFromMeta(snapshot),
   hooks: {
     deriveEventFromTool: (ctx) => {

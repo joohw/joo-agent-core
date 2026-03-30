@@ -10,7 +10,7 @@
 
 | 路径 | 说明 |
 |------|------|
-| `src/agent/createAgent.ts` | 将可选阶段机与 `Agent` 绑定：`setTools`、`beforeToolCall`、namespaced tools（`machineId__toolName`，兼容不接受 `.` 的 API） |
+| `src/agent/createAgent.ts` | 将可选阶段机与 `Agent` 绑定：`setTools`、`beforeToolCall`、namespaced tools（`machineId_toolName`，兼容不接受 `.` 的 API） |
 | `src/agent/index.ts` | 对外统一入口 `Agent(...)`（覆盖/增强 pi-agent），并透出 `createAgent` 与类型 |
 | `src/machine/types.ts` | machine 相关类型（`MachineSpec` / `MachineSpecs`） |
 | `src/machine/machine.ts` | 轻量 FSM：`initial` + `states` + `on`（`event.type` → 下一状态） |
@@ -18,7 +18,7 @@
 | `src/machine/runtime.ts` | 多机注册、工具扁平化、`send` / `subscribeToolsChanged` |
 | `src/event/eventBus.ts` | 通用事件总线（见下「事件总线」） |
 | `src/index.ts` | 公共 API 聚合导出 |
-| `test/example.ts` | 可运行示例：分阶段工具 + Kimi For Coding（`kimi-coding`） |
+| `test/example.ts` | 可运行示例：宠物养成状态机 + Kimi For Coding（`kimi-coding`） |
 
 ### 事件总线
 

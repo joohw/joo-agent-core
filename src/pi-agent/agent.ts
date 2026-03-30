@@ -309,7 +309,14 @@ export class Agent {
 	}
 
 	setTools(t: AgentTool<any>[]) {
-		this._state.tools = t;
+		// Mutate in place so AgentContext.tools (same reference passed into the agent loop)
+		// stays current when machines call setTools after transitions — replacing the array
+		// would leave runLoop's currentContext.tools pointing at stale tool definitions.
+		const tools = this._state.tools;
+		tools.length = 0;
+		for (const tool of t) {
+			tools.push(tool);
+		}
 	}
 
 	replaceMessages(ms: AgentMessage[]) {

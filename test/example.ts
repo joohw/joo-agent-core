@@ -1,5 +1,5 @@
 /**
- * Demo: phase machine with `meta.tools` per phase + pi-agent `Agent`.
+ * Demo: pet-care state machine — each state exposes only allowed actions (feed / walk / sleep / …).
  * Run: npx tsx test/example.ts  （或 npm run example）
  * Requires provider API keys (see @mariozechner/pi-ai).
  * Loads `.env` from repo root when present (see dotenv).
@@ -21,136 +21,134 @@ const hasKimiKey = Boolean(process.env.KIMI_API_KEY?.trim());
 
 const exampleModel = getModel("kimi-coding", "k2p5");
 
-function textTool(name: string, label: string, description: string): AgentTool {
+const PET_MACHINE_ID = "pet" as const;
+
+function actionTool(
+  name: string,
+  label: string,
+  description: string,
+  ack: (note: string) => string
+): AgentTool {
   return {
     name,
     label,
     description,
     parameters: Type.Object({
-      note: Type.String({ description: "Short note for the user" }),
+      note: Type.String({ description: "简短说明（给主人的反馈）" }),
     }),
     execute: async (_id, params) => ({
-      content: [{ type: "text", text: `[${name}] ${(params as { note: string }).note}` }],
+      content: [{ type: "text", text: ack((params as { note: string }).note) }],
       details: {},
     }),
   };
 }
 
-/** First phase only: call after reading the workflow manual; completion triggers `manual_done` → gather. */
-const readOperatorManualTool: AgentTool = {
-  name: "read_operator_manual",
-  label: "Read operator manual",
-  description:
-    "Confirm you have read the operator / workflow manual (说明书). Call once when ready; this advances the workflow to the gather phase.",
-  parameters: Type.Object({
-    note: Type.String({ description: "Brief confirmation (e.g. key points you understood)" }),
-  }),
-  execute: async (_id, params) => ({
-    content: [{ type: "text", text: `[read_operator_manual] ${(params as { note: string }).note}` }],
-    details: {},
-  }),
-};
-
-const toolsReadManual: AgentTool[] = [readOperatorManualTool];
-
-/** Advances the phase chart; transitions are derived in `deriveEventFromTool` from the current snapshot (not from free text). */
-const markPhaseDoneTool: AgentTool = {
-  name: "mark_phase_done",
-  label: "Mark phase done",
-  description:
-    "Call when the current phase is complete to move to the next phase. Do not rely on natural-language cues alone — this tool is what updates workflow state.",
-  parameters: Type.Object({
-    note: Type.String({ description: "Short note (e.g. what was completed)" }),
-  }),
-  execute: async (_id, params) => ({
-    content: [{ type: "text", text: `[mark_phase_done] ${(params as { note: string }).note}` }],
-    details: {},
-  }),
-};
-
-const toolsGather: AgentTool[] = [
-  textTool("collect_requirements", "Collect requirements", "Capture what the user wants before acting."),
-  markPhaseDoneTool,
+/** 睡觉中：只能叫醒 */
+const toolsSleeping: AgentTool[] = [
+  actionTool(
+    "wake_up",
+    "叫醒宠物",
+    "宠物在睡觉。只有叫醒之后才能喂食或出门。",
+    (n) => `[叫醒] ${n}`
+  ),
 ];
 
-const toolsAct: AgentTool[] = [
-  textTool("run_step", "Run step", "Perform one concrete step toward the goal."),
-  markPhaseDoneTool,
+/** 空闲：喂食、出门散步、直接哄睡 */
+const toolsIdle: AgentTool[] = [
+  actionTool("feed", "喂食", "给宠物喂食。吃完会进入「吃饱」状态，此时不能再喂，需要先玩或散步。", (n) => `[喂食] ${n}`),
+  actionTool("go_walk", "出门散步", "带宠物出门散步（进入「散步中」）。", (n) => `[出门散步] ${n}`),
+  actionTool("lights_out", "关灯睡觉", "结束一天，让宠物入睡。", (n) => `[睡觉] ${n}`),
 ];
 
-const toolsReview: AgentTool[] = [
-  textTool("summarize", "Summarize", "Summarize results for the user."),
-  markPhaseDoneTool,
+/** 刚吃饱：不能马上再喂，可以玩、散步或睡觉 */
+const toolsFed: AgentTool[] = [
+  actionTool("play", "玩耍", "和宠物玩一会儿，消化一下，回到「空闲」。", (n) => `[玩耍] ${n}`),
+  actionTool("go_walk", "出门散步", "带宠物出门散步（进入「散步中」）。", (n) => `[出门散步] ${n}`),
+  actionTool("lights_out", "关灯睡觉", "让宠物入睡。", (n) => `[睡觉] ${n}`),
 ];
 
-const toolWorkflow = {
-  initial: "readManual" as const,
+/** 散步中：只能回家 */
+const toolsWalking: AgentTool[] = [
+  actionTool(
+    "finish_walk",
+    "散步结束回家",
+    "结束散步，回到家中（回到「空闲」）。",
+    (n) => `[回家] ${n}`
+  ),
+];
+
+const petMachine = {
+  initial: "sleeping" as const,
   states: {
-    readManual: {
-      meta: { tools: toolsReadManual },
-      on: { manual_done: "gather" },
+    sleeping: {
+      meta: { tools: toolsSleeping },
+      on: { woke: "idle" },
     },
-    gather: {
-      meta: { tools: toolsGather },
-      on: { gather_done: "act" },
+    idle: {
+      meta: { tools: toolsIdle },
+      on: { fed: "fed", walk: "walking", bedtime: "sleeping" },
     },
-    act: {
-      meta: { tools: toolsAct },
-      on: { act_done: "review" },
+    fed: {
+      meta: { tools: toolsFed },
+      on: { played: "idle", walk: "walking", bedtime: "sleeping" },
     },
-    review: {
-      meta: { tools: toolsReview },
-      on: { review_done: "gather" },
+    walking: {
+      meta: { tools: toolsWalking },
+      on: { walk_done: "idle" },
     },
   },
 };
 
 /** Set immediately after `createAgent` so `deriveEventFromTool` can read the current state. */
-let actorForPhaseHooks: MachineHandle | null = null;
+let petActorForHooks: MachineHandle | null = null;
 
-const { agent, actor, send } = createAgent({
+const { agent, phase: petPhase, send } = createAgent({
   agentOptions: {
     initialState: {
       systemPrompt: [
-        "You are a phased assistant. Tools are gated by phase — only call tools that exist in the current phase.",
+        "你是一个电子宠物养成助手。模型**只能调用当前状态下存在的工具**；状态由工具调用推进，不要凭空假设。",
         "",
-        "## Operator manual (read this first)",
-        "1) **readManual** phase: only **read_operator_manual** exists. Read this section, then call **read_operator_manual** once with a short note. That moves you to gather.",
-        "2) **gather** → **act** → **review**: each phase has its own tools plus **mark_phase_done**.",
-        "3) When a phase is truly finished, call **mark_phase_done** (short note) to advance. Natural language alone does not change machine state.",
-        "4) Phase tools: gather uses collect_requirements; act uses run_step; review uses summarize.",
+        "## 状态与可用工具（务必遵守）",
+        "- **sleeping（睡觉）**：只能 `wake_up` → 进入 idle。",
+        "- **idle（空闲）**：可 `feed`（→ fed）、`go_walk`（→ walking）、`lights_out`（→ sleeping）。",
+        "- **fed（刚吃饱）**：不能喂食。可 `play`（→ idle）、`go_walk`（→ walking）、`lights_out`（→ sleeping）。",
+        "- **walking（散步中）**：只能 `finish_walk`（→ idle）。",
+        "",
+        "请用简短中文回复用户，并在需要推进流程时调用**当前列表里**的工具。",
       ].join("\n"),
       model: exampleModel,
     },
   },
-  machine: { id: "workflow", machine: toolWorkflow },
+  machine: { id: PET_MACHINE_ID, machine: petMachine },
   resolveTools: (s) => toolsFromMeta(s),
   hooks: {
     deriveEventFromTool: (ctx):
-      | { type: "manual_done" }
-      | { type: "gather_done" }
-      | { type: "act_done" }
-      | { type: "review_done" }
+      | { type: "woke" }
+      | { type: "fed" }
+      | { type: "walk" }
+      | { type: "bedtime" }
+      | { type: "played" }
+      | { type: "walk_done" }
       | undefined => {
-      const a = actorForPhaseHooks;
+      const a = petActorForHooks;
       if (!a) return undefined;
       const value = a.getSnapshot().value;
-      const parsed = parseNamespacedToolName(ctx.toolCall.name, ["workflow"]);
-      const localToolName = parsed?.localName ?? ctx.toolCall.name;
-      if (localToolName === "read_operator_manual" && value === "readManual") {
-        return { type: "manual_done" };
-      }
-      if (localToolName !== "mark_phase_done") return undefined;
-      if (value === "gather") return { type: "gather_done" };
-      if (value === "act") return { type: "act_done" };
-      if (value === "review") return { type: "review_done" };
+      const parsed = parseNamespacedToolName(ctx.toolCall.name, [PET_MACHINE_ID]);
+      const local = parsed?.localName ?? ctx.toolCall.name;
+
+      if (local === "wake_up" && value === "sleeping") return { type: "woke" };
+      if (local === "feed" && value === "idle") return { type: "fed" };
+      if (local === "go_walk" && (value === "idle" || value === "fed")) return { type: "walk" };
+      if (local === "lights_out" && (value === "idle" || value === "fed")) return { type: "bedtime" };
+      if (local === "play" && value === "fed") return { type: "played" };
+      if (local === "finish_walk" && value === "walking") return { type: "walk_done" };
       return undefined;
     },
   },
 });
-actorForPhaseHooks = actor ?? null;
+petActorForHooks = petPhase ?? null;
 
-void send; // e.g. send({ type: "gather_done" }) from UI
+void send; // e.g. send({ type: "woke" }) from UI
 
 /** Count streamed text so we can print non-streaming completions (some providers batch output → few/no `text_delta` events). */
 let streamedTextChars = 0;
@@ -219,7 +217,7 @@ agent.subscribe((ev) => {
 });
 
 if (!hasKimiKey) {
-  const dry = createMachine(toolWorkflow);
+  const dry = createMachine(petMachine);
   const snap = dry.getSnapshot();
   console.error(
     "Set KIMI_API_KEY in .env (Kimi For Coding) to run a live prompt. Initial state:",
@@ -231,11 +229,13 @@ if (!hasKimiKey) {
 }
 
 try {
-  console.error("[example] kimi-coding / k2p5");
-  if (actor) console.error("[phase] initial", JSON.stringify(actor.getSnapshot().value));
-  await agent.prompt("I want to plan a small CLI tool, then build it, then review.");
+  console.error("[example] kimi-coding / k2p5 — pet state machine");
+  if (petPhase) console.error("[pet] initial state:", JSON.stringify(petPhase.getSnapshot().value));
+  await agent.prompt(
+    "宠物现在在睡觉。请按状态机规则照顾它：先叫醒，再喂食，然后带它出门散步，散步结束后哄它睡觉。每一步用对应工具完成，并简单告诉我发生了什么。"
+  );
   if (agent.state.error) console.error("\n[example] agent.state.error:", agent.state.error);
-  if (actor) console.error("\n[phase] final", JSON.stringify(actor.getSnapshot().value));
+  if (petPhase) console.error("\n[pet] final state:", JSON.stringify(petPhase.getSnapshot().value));
   console.error("\n[example] prompt finished");
 } catch (err) {
   console.error("\n[example] prompt failed:", err);

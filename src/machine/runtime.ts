@@ -41,20 +41,15 @@ export interface MachineRuntime {
 
 /**
  * Joins machine id and local tool name for the flat tool list.
- * Uses `__` (not `.`) so names stay valid for providers that reject dots in function names (e.g. Kimi).
- * Machine id and local tool name must not contain this substring.
+ * Uses `_` (not `.`) so names stay valid for providers that reject dots in function names (e.g. Kimi).
+ * Local tool names may contain underscores (e.g. `read_operator_manual`); {@link parseNamespacedToolName}
+ * resolves splits using the configured machine ids (longest match first).
  */
-export const MACHINE_TOOL_NAMESPACE_SEP = "__" as const;
-
-function assertValidMachineToolSegment(s: string, label: string): void {
-  if (s.includes(MACHINE_TOOL_NAMESPACE_SEP)) {
-    throw new Error(`${label} must not contain "${MACHINE_TOOL_NAMESPACE_SEP}": ${JSON.stringify(s)}`);
-  }
-}
+export const MACHINE_TOOL_NAMESPACE_SEP = "_" as const;
 
 export function namespacedToolName(machineId: string, toolName: string): string {
-  assertValidMachineToolSegment(machineId, "Machine id");
-  assertValidMachineToolSegment(toolName, "Tool name");
+  if (!machineId) throw new Error("Machine id must be non-empty.");
+  if (!toolName) throw new Error("Tool name must be non-empty.");
   return `${machineId}${MACHINE_TOOL_NAMESPACE_SEP}${toolName}`;
 }
 
